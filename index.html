@@ -40,6 +40,7 @@
   .btn { width:100%; margin-top:20px; padding:16px; font-size:18px; font-weight:700; border:none;
     border-radius:14px; background:var(--accent); color:#fff; }
   .btn.alt { background:var(--track); color:var(--text); margin-top:10px; }
+  .btn.danger { background:none; color:var(--over); margin-top:6px; font-size:16px; }
   .btn:disabled { opacity:.6; }
   nav { position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--card);
     border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom,0px); }
@@ -48,18 +49,27 @@
   nav button span { font-size:22px; }
   nav button.active { color:var(--accent); font-weight:700; }
   .overlay { position:fixed; inset:0; background:rgba(0,0,0,.5); display:none;
-    align-items:center; justify-content:center; padding:24px; z-index:10; }
+    align-items:center; justify-content:center; padding:24px; z-index:10; overflow:auto; }
   .overlay.show { display:flex; }
   .dialog { background:var(--card); border-radius:18px; padding:22px; width:100%; max-width:380px; }
   .dialog h2 { margin:0 0 6px; font-size:20px; }
   .msg { text-align:center; color:var(--muted); padding:40px 0; }
   .err { color:var(--over); text-align:center; margin-top:12px; }
+  .banner { background:rgba(224,160,32,.15); border:1px solid var(--warn); border-radius:12px;
+    padding:10px 12px; font-size:13px; margin:10px 0; }
+  .day { font-size:13px; font-weight:700; color:var(--muted); margin:18px 4px 4px; text-transform:uppercase; letter-spacing:.04em; }
+  .pay { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 16px;
+    background:var(--card); border-radius:14px; margin:6px 0; }
+  .pay .amt { font-weight:700; white-space:nowrap; }
+  .pay .cat { font-weight:600; text-transform:capitalize; }
+  .pay .note { color:var(--muted); font-size:13px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; }
+  .paytotal { display:flex; justify-content:space-between; padding:6px 4px; font-weight:700; }
 </style>
 </head>
 <body>
 <header>
   <h1 id="title">This month</h1>
-  <button onclick="load()" aria-label="Refresh">&#8635;</button>
+  <button id="refreshBtn" onclick="refresh()" aria-label="Refresh">&#8635;</button>
 </header>
 
 <main>
@@ -79,11 +89,17 @@
     <button class="btn" id="submit" onclick="submitExpense()">Add expense</button>
     <div class="err" id="err"></div>
   </section>
+
+  <section id="pay" class="tab">
+    <div id="payBanner"></div>
+    <div id="payList"><div class="msg">Loading…</div></div>
+  </section>
 </main>
 
 <nav>
   <button id="nav-home" class="active" onclick="show('home')"><span>&#128202;</span>Home</button>
   <button id="nav-add" onclick="show('add')"><span>&#10133;</span>Add payment</button>
+  <button id="nav-pay" onclick="show('pay')"><span>&#128203;</span>Payments</button>
 </nav>
 
 <div class="overlay" id="setup">
@@ -102,71 +118,67 @@
   <div class="dialog">
     <h2>Added &#10003;</h2>
     <div class="sub" id="dlgInfo"></div>
-    <button class="btn" onclick="more()">Add another</button>
-    <button class="btn alt" onclick="done()">I'm done</button>
+    <button class="btn alt" onclick="more()">Add another</button>
+    <button class="btn" onclick="done()">I'm done</button>
+  </div>
+</div>
+
+<div class="overlay" id="editDlg">
+  <div class="dialog">
+    <h2>Edit payment</h2>
+    <label for="eAmount">Amount</label>
+    <input id="eAmount" type="number" inputmode="decimal" step="0.01">
+    <label for="eCat">Category</label>
+    <select id="eCat"></select>
+    <label for="eNote">Note</label>
+    <input id="eNote" type="text">
+    <label for="eDate">Date</label>
+    <input id="eDate" type="date">
+    <button class="btn" id="eSave" onclick="saveEdit()">Save changes</button>
+    <button class="btn alt" onclick="closeEdit()">Cancel</button>
+    <button class="btn danger" id="eDelete" onclick="deleteEdit()">Delete payment</button>
+    <div class="err" id="eErr"></div>
   </div>
 </div>
 
 <script>
-  let data = null;
+  let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money = n => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  function today() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  const TITLES = { home:'This month', add:'Add a payment', pay:'Payments' };
 
-  function today() {
-    const d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-  }
-
-  function show(tab) {
-    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === tab));
-    $('nav-home').classList.toggle('active', tab === 'home');
-    $('nav-add').classList.toggle('active', tab === 'add');
-    if (tab === 'add') $('date').value = $('date').value || today();
-  }
-
-  function level(pct) { return pct > 100 ? 'over' : pct >= 80 ? 'warn' : 'ok'; }
-
-  function card(name, budget, spent, extra) {
-    const left = budget - spent;
-    const pct = budget > 0 ? (spent / budget) * 100 : (spent > 0 ? 101 : 0);
-    const lv = level(pct);
-    const leftTxt = left >= 0 ? money(left) + ' left' : money(-left) + ' over budget';
-    return '<div class="card ' + (extra || '') + '">' +
-      '<div class="row"><span class="name">' + name + '</span>' +
-      '<span class="sub">' + money(spent) + ' of ' + money(budget) + '</span></div>' +
-      '<div class="track"><div class="fill bg-' + lv + '" style="width:' + Math.min(pct, 100) + '%"></div></div>' +
-      '<div class="row"><span class="left ' + lv + '">' + leftTxt + '</span>' +
-      '<span class="sub">' + Math.round(pct) + '%</span></div></div>';
-  }
-
-  function render() {
-    if (!data) return;
-    const cats = data.categories;
-    const tb = cats.reduce((a, c) => a + c.budget, 0);
-    const ts = cats.reduce((a, c) => a + c.spent, 0);
-    $('list').innerHTML = card('Total', tb, ts, 'total') +
-      cats.map(c => card(c.name, c.budget, c.spent)).join('');
-    const sel = $('cat'), cur = sel.value;
-    sel.innerHTML = cats.map(c => '<option>' + c.name + '</option>').join('');
-    if (cur) sel.value = cur;
-  }
-
+  // ---------- API ----------
   const cfg = () => ({ url: localStorage.getItem('b_url'), key: localStorage.getItem('b_key') });
-
-  async function api(items) {
+  async function call(opts) {
     const { url, key } = cfg();
     let r;
-    if (items) {
+    if (opts.body) {
       r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ key: key, items: items }) });
+        body: JSON.stringify(Object.assign({ key: key }, opts.body)) });
     } else {
-      r = await fetch(url + '?key=' + encodeURIComponent(key));
+      r = await fetch(url + '?key=' + encodeURIComponent(key) + (opts.query ? '&' + opts.query : ''));
     }
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     return d;
   }
 
+  // ---------- navigation ----------
+  function show(tab) {
+    if (tab === 'add' && current !== 'add') $('date').value = today();
+    current = tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === tab));
+    ['home','add','pay'].forEach(t => $('nav-' + t).classList.toggle('active', t === tab));
+    $('title').textContent = TITLES[tab];
+    $('refreshBtn').style.visibility = tab === 'add' ? 'hidden' : 'visible';
+    if (tab === 'pay') loadPayments();
+    window.scrollTo(0, 0);
+  }
+  function refresh() { current === 'pay' ? loadPayments() : load(); }
+
+  // ---------- setup ----------
   function saveSetup() {
     const u = $('cfgUrl').value.trim(), k = $('cfgKey').value.trim();
     if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u) || !k) { $('cfgErr').textContent = 'Enter the /exec URL and your passphrase.'; return; }
@@ -174,16 +186,40 @@
     $('setup').classList.remove('show'); load();
   }
 
+  // ---------- home ----------
+  function level(pct) { return pct > 100 ? 'over' : pct >= 80 ? 'warn' : 'ok'; }
+  function card(name, budget, spent, extra) {
+    const left = budget - spent;
+    const pct = budget > 0 ? (spent / budget) * 100 : (spent > 0 ? 101 : 0);
+    const lv = level(pct);
+    const leftTxt = left >= 0 ? money(left) + ' left' : money(-left) + ' over budget';
+    return '<div class="card ' + (extra || '') + '">' +
+      '<div class="row"><span class="name">' + esc(name) + '</span>' +
+      '<span class="sub">' + money(spent) + ' of ' + money(budget) + '</span></div>' +
+      '<div class="track"><div class="fill bg-' + lv + '" style="width:' + Math.min(pct, 100) + '%"></div></div>' +
+      '<div class="row"><span class="left ' + lv + '">' + leftTxt + '</span>' +
+      '<span class="sub">' + Math.round(pct) + '%</span></div></div>';
+  }
+  function render() {
+    if (!data) return;
+    const cats = data.categories;
+    const t = data.total || { budget: cats.reduce((a, c) => a + c.budget, 0), spent: cats.reduce((a, c) => a + c.spent, 0) };
+    $('list').innerHTML = card('Total', t.budget, t.spent, 'total') + cats.map(c => card(c.name, c.budget, c.spent)).join('');
+    const opts = cats.map(c => '<option>' + esc(c.name) + '</option>').join('');
+    const sel = $('cat'), cur = sel.value;
+    sel.innerHTML = opts; if (cur) sel.value = cur;
+  }
   function load() {
     if (!cfg().url) { $('setup').classList.add('show'); return; }
     $('list').innerHTML = '<div class="msg">Loading…</div>';
-    api().then(d => { data = d; render(); })
+    call({}).then(d => { data = d; render(); })
       .catch(e => {
-        $('list').innerHTML = '<div class="msg err">Couldn\'t load: ' + e.message +
+        $('list').innerHTML = '<div class="msg err">Couldn\'t load: ' + esc(e.message) +
           '<br><br><button class="btn alt" onclick="localStorage.clear();load()">Re-enter setup</button></div>';
       });
   }
 
+  // ---------- add payment ----------
   function submitExpense() {
     const amount = parseFloat($('amount').value);
     $('err').textContent = '';
@@ -191,9 +227,9 @@
     const category = $('cat').value;
     if (!category) { $('err').textContent = 'Pick a category.'; return; }
     $('submit').disabled = true; $('submit').textContent = 'Saving…';
-    api([{ amount: amount, category: category, note: $('note').value, date: $('date').value || today() }])
+    call({ body: { action: 'add', items: [{ amount: amount, category: category, note: $('note').value, date: $('date').value || undefined }] } })
       .then(d => {
-        data = d; render();
+        data = d; render(); payments = null;
         $('submit').disabled = false; $('submit').textContent = 'Add expense';
         const c = d.categories.find(x => x.name === category);
         if (c) { const left = c.budget - c.spent;
@@ -205,16 +241,62 @@
         $('err').textContent = 'Save failed: ' + e.message;
       });
   }
+  function more() { $('dlg').classList.remove('show'); $('amount').value = ''; $('note').value = ''; $('amount').focus(); }
+  function done() { $('dlg').classList.remove('show'); $('amount').value = ''; $('note').value = ''; show('home'); }
 
-  function more() {
-    $('dlg').classList.remove('show');
-    $('amount').value = ''; $('note').value = '';
-    $('amount').focus();
+  // ---------- payments ----------
+  function dayLabel(ymd) {
+    if (!ymd) return 'No date';
+    const p = ymd.split('-');
+    return new Date(+p[0], +p[1] - 1, +p[2]).toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
   }
-  function done() {
-    $('dlg').classList.remove('show');
-    $('amount').value = ''; $('note').value = '';
-    show('home'); window.scrollTo(0, 0);
+  function loadPayments() {
+    if (!cfg().url) { $('setup').classList.add('show'); return; }
+    $('payList').innerHTML = '<div class="msg">Loading…</div>';
+    call({ query: 'action=payments' }).then(d => { payments = d; renderPayments(); })
+      .catch(e => { $('payList').innerHTML = '<div class="msg err">Couldn\'t load: ' + esc(e.message) + '</div>'; });
+  }
+  function renderPayments() {
+    if (!payments) return;
+    $('payBanner').innerHTML = payments.limitWarning
+      ? '<div class="banner">Your sheet\'s Spending formulas only count rows 16 to 86. Extend them to row 500 so new payments keep counting.</div>' : '';
+    const list = payments.payments;
+    if (!list.length) { $('payList').innerHTML = '<div class="msg">No payments yet this month.</div>'; return; }
+    const total = list.reduce((a, p) => a + p.amount, 0);
+    let html = '<div class="paytotal"><span>' + list.length + ' payments</span><span>' + money(total) + '</span></div>', lastDay = null;
+    list.forEach((p, i) => {
+      if (p.effectiveDate !== lastDay) { html += '<div class="day">' + esc(dayLabel(p.effectiveDate)) + '</div>'; lastDay = p.effectiveDate; }
+      html += '<div class="pay" onclick="openEdit(' + i + ')"><div style="min-width:0"><div class="cat">' + esc(p.category) + '</div>' +
+        (p.note ? '<div class="note">' + esc(p.note) + '</div>' : '') + '</div><div class="amt">' + money(p.amount) + '</div></div>';
+    });
+    $('payList').innerHTML = html;
+  }
+  function openEdit(i) {
+    const p = payments.payments[i]; editing = p;
+    $('eAmount').value = p.amount; $('eNote').value = p.note; $('eDate').value = p.effectiveDate || '';
+    const names = (data ? data.categories.map(c => c.name) : []);
+    if (names.indexOf(p.category) < 0) names.push(p.category);
+    $('eCat').innerHTML = names.map(n => '<option>' + esc(n) + '</option>').join('');
+    $('eCat').value = p.category; $('eErr').textContent = '';
+    $('editDlg').classList.add('show');
+  }
+  function closeEdit() { $('editDlg').classList.remove('show'); editing = null; }
+  function afterEdit(d) { data = d; render(); closeEdit(); $('eSave').disabled = false; $('eDelete').disabled = false; loadPayments(); }
+  function editFail(e) { $('eSave').disabled = false; $('eDelete').disabled = false; $('eErr').textContent = e.message; }
+  function saveEdit() {
+    const amount = parseFloat($('eAmount').value);
+    if (!(amount > 0)) { $('eErr').textContent = 'Enter an amount.'; return; }
+    $('eSave').disabled = true; $('eDelete').disabled = true;
+    const body = { action: 'update', row: editing.row, expected: { category: editing.category, amount: editing.amount },
+      category: $('eCat').value, amount: amount, note: $('eNote').value };
+    if ($('eDate').value && $('eDate').value !== editing.effectiveDate) body.date = $('eDate').value;
+    call({ body: body }).then(afterEdit).catch(editFail);
+  }
+  function deleteEdit() {
+    if (!confirm('Delete this payment?')) return;
+    $('eSave').disabled = true; $('eDelete').disabled = true;
+    call({ body: { action: 'delete', row: editing.row, expected: { category: editing.category, amount: editing.amount } } })
+      .then(afterEdit).catch(editFail);
   }
 
   $('date').value = today();

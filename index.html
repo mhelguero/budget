@@ -63,6 +63,12 @@
   .pay .amt { font-weight:700; white-space:nowrap; }
   .pay .cat { font-weight:600; text-transform:capitalize; }
   .pay .note { color:var(--muted); font-size:13px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; }
+  .seg { display:flex; background:var(--track); border-radius:12px; padding:3px; margin:6px 0 4px; }
+  .seg button { flex:1; border:none; background:none; padding:10px 0; font-size:15px; font-weight:600; color:var(--muted); border-radius:10px; }
+  .seg button.active { background:var(--card); color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.12); }
+  .mrow { display:flex; justify-content:space-between; font-size:14px; padding:3px 0; color:var(--muted); }
+  .mrow b { color:var(--text); font-weight:600; }
+  .ytot { font-weight:700; font-size:18px; }
   .paytotal { display:flex; justify-content:space-between; padding:6px 4px; font-weight:700; }
 </style>
 </head>
@@ -87,13 +93,15 @@
     <input id="note" type="text" placeholder="e.g. amazon">
     <label for="date">Date</label>
     <input id="date" type="date">
-    <button class="btn" id="submit" onclick="submitExpense()">Add expense</button>
+    <button class="btn" id="submit" onclick="submitExpense()">Add Payment</button>
     <div class="err" id="err"></div>
   </section>
 
   <section id="pay" class="tab">
+    <div class="seg"><button id="seg-list" class="active" onclick="setPayView('list')">Payments</button><button id="seg-sum" onclick="setPayView('sum')">By category</button></div>
     <div id="payBanner"></div>
     <div id="payList"><div class="msg">Loading…</div></div>
+    <div id="sumList" style="display:none"></div>
   </section>
 </main>
 
@@ -143,8 +151,8 @@
 </div>
 
 <script>
-  const APP_VERSION = 7;
-  let backendVersion = '?';
+  const APP_VERSION = 8;
+  let backendVersion = '?', summary = null, payView = 'list';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -179,10 +187,41 @@
     ['home','add','pay'].forEach(t => $('nav-' + t).classList.toggle('active', t === tab));
     $('title').textContent = TITLES[tab];
     $('refreshBtn').style.visibility = tab === 'add' ? 'hidden' : 'visible';
-    if (tab === 'pay') loadPayments();
+    if (tab === 'pay') { payView === 'sum' ? loadSummary() : loadPayments(); }
     window.scrollTo(0, 0);
   }
-  function refresh() { current === 'pay' ? loadPayments() : load(); }
+  function refresh() { current === 'pay' ? (payView === 'sum' ? loadSummary() : loadPayments()) : load(); }
+  function setPayView(v) {
+    payView = v;
+    $('seg-list').classList.toggle('active', v === 'list'); $('seg-sum').classList.toggle('active', v === 'sum');
+    $('payList').style.display = v === 'list' ? '' : 'none'; $('payBanner').style.display = v === 'list' ? '' : 'none';
+    $('sumList').style.display = v === 'sum' ? '' : 'none';
+    if (v === 'sum') loadSummary(); else loadPayments();
+  }
+  function loadSummary() {
+    if (!cfg().url) { $('setup').classList.add('show'); return; }
+    $('sumList').innerHTML = '<div class="msg">Loading…</div>';
+    call({ query: 'action=summary' }).then(d => {
+      if (!d || !Array.isArray(d.rows)) {
+        throw new Error('The backend has no year summary yet (it sent: ' + Object.keys(d || {}).join(', ') + '; backend v' + (d && d.version || 'old') +
+          ', app v' + APP_VERSION + '). Paste the latest Code.gs and deploy a New version on BOTH deployments.');
+      }
+      summary = d; renderSummary();
+    }).catch(e => { $('sumList').innerHTML = '<div class="msg err">Couldn\'t load: ' + esc(e.message) + where(e) + '</div>'; });
+  }
+  function sumCard(name, values, yearTotal, months, cur, start, cls) {
+    let h = '<div class="card ' + (cls || '') + '"><div class="row"><span class="name">' + esc(name) + '</span><span class="ytot">' + money(yearTotal) + '</span></div>' +
+      '<div class="sub" style="margin:2px 0 8px">year to date</div>';
+    months.forEach(m => { h += '<div class="mrow"><span>' + m + (m === cur ? ' (so far)' : '') + '</span><b>' + money(values[m] || 0) + '</b></div>'; });
+    if (start !== null && start !== undefined) h += '<div class="sub" style="margin-top:8px">Includes starting total of ' + money(start) + '</div>';
+    return h + '</div>';
+  }
+  function renderSummary() {
+    const s = summary; if (!s) return;
+    let h = sumCard('All categories', s.totals.values, s.totals.yearTotal, s.months, s.current, null, 'total');
+    s.rows.forEach(r => { h += sumCard(r.name, r.values, r.yearTotal, s.months, s.current, r.startingTotal); });
+    $('sumList').innerHTML = h;
+  }
 
   // ---------- setup ----------
   function saveSetup() {
@@ -235,15 +274,15 @@
     $('submit').disabled = true; $('submit').textContent = 'Saving…';
     call({ body: { action: 'add', items: [{ amount: amount, category: category, note: $('note').value, date: $('date').value || undefined }] } })
       .then(d => {
-        data = d; render(); payments = null;
-        $('submit').disabled = false; $('submit').textContent = 'Add expense';
+        data = d; render(); payments = null; summary = null;
+        $('submit').disabled = false; $('submit').textContent = 'Add Payment';
         const c = d.categories.find(x => x.name === category);
         if (c) { const left = c.budget - c.spent;
           $('dlgInfo').textContent = category + ': ' + (left >= 0 ? money(left) + ' left this month' : money(-left) + ' over budget'); }
         $('dlg').classList.add('show');
       })
       .catch(e => {
-        $('submit').disabled = false; $('submit').textContent = 'Add expense';
+        $('submit').disabled = false; $('submit').textContent = 'Add Payment';
         $('err').textContent = 'Save failed: ' + e.message;
       });
   }
@@ -292,7 +331,7 @@
     $('editDlg').classList.add('show');
   }
   function closeEdit() { $('editDlg').classList.remove('show'); editing = null; }
-  function afterEdit(d) { data = d; render(); closeEdit(); $('eSave').disabled = false; $('eDelete').disabled = false; loadPayments(); }
+  function afterEdit(d) { data = d; render(); summary = null; closeEdit(); $('eSave').disabled = false; $('eDelete').disabled = false; loadPayments(); }
   function editFail(e) { $('eSave').disabled = false; $('eDelete').disabled = false; $('eErr').textContent = e.message; }
   function saveEdit() {
     const amount = parseFloat($('eAmount').value);

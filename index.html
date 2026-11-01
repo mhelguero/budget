@@ -253,7 +253,9 @@
   function loadPayments() {
     if (!cfg().url) { $('setup').classList.add('show'); return; }
     $('payList').innerHTML = '<div class="msg">Loading…</div>';
-    call({ query: 'action=payments' }).then(d => { payments = d; renderPayments(); })
+    call({ query: 'action=payments' }).then(d => {
+      if (!d || !Array.isArray(d.payments)) throw new Error('Your Apps Script is out of date. Paste the latest Code.gs and deploy a New version.');
+      payments = d; renderPayments(); })
       .catch(e => { $('payList').innerHTML = '<div class="msg err">Couldn\'t load: ' + esc(e.message) + '</div>'; });
   }
   function renderPayments() {

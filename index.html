@@ -20,7 +20,6 @@
     font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
   header { padding:18px 20px 8px; display:flex; justify-content:space-between; align-items:center; }
   header h1 { font-size:22px; margin:0; }
-  header button { background:none; border:none; font-size:22px; color:var(--accent); padding:6px; }
   main { padding:0 16px 110px; max-width:560px; margin:0 auto; }
   .tab { display:none; } .tab.active { display:block; }
   .card { background:var(--card); border-radius:16px; padding:14px 16px; margin:10px 0;
@@ -34,14 +33,18 @@
   .ok{color:var(--ok)} .warn{color:var(--warn)} .over{color:var(--over)}
   .bg-ok{background:var(--ok)} .bg-warn{background:var(--warn)} .bg-over{background:var(--over)}
   .total { border:2px solid var(--accent); }
+  .owed { border:2px dashed var(--warn); cursor:pointer; }
   label { display:block; font-size:13px; color:var(--muted); margin:14px 0 6px; }
   input,select { width:100%; font-size:18px; padding:14px; border-radius:12px; color:var(--text);
     border:1px solid var(--line); background:var(--card); }
+  .chk { display:flex; align-items:center; gap:10px; font-size:15px; color:var(--text); margin:16px 0 0; }
+  .chk input { width:22px; height:22px; padding:0; }
   .btn { width:100%; margin-top:20px; padding:16px; font-size:18px; font-weight:700; border:none;
     border-radius:14px; background:var(--accent); color:#fff; }
   .btn.alt { background:var(--track); color:var(--text); margin-top:10px; }
   .btn.danger { background:none; color:var(--over); margin-top:6px; font-size:16px; }
   .btn:disabled { opacity:.6; }
+  .linkbtn { background:none; border:none; color:var(--accent); font-size:14px; font-weight:600; padding:4px 0; }
   nav { position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--card);
     border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom,0px); }
   nav button { flex:1; padding:12px 0 10px; background:none; border:none; font-size:12px;
@@ -60,28 +63,24 @@
   .day { font-size:13px; font-weight:700; color:var(--muted); margin:18px 4px 4px; text-transform:uppercase; letter-spacing:.04em; }
   .pay { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 16px;
     background:var(--card); border-radius:14px; margin:6px 0; }
-  .pay .amt { font-weight:700; white-space:nowrap; }
+  .pay .amt { font-weight:700; white-space:nowrap; text-align:right; }
   .pay .cat { font-weight:600; text-transform:capitalize; }
   .pay .note { color:var(--muted); font-size:13px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; }
+  .paytotal { display:flex; justify-content:space-between; padding:6px 4px; font-weight:700; }
   .seg { display:flex; background:var(--track); border-radius:12px; padding:3px; margin:6px 0 4px; }
   .seg button { flex:1; border:none; background:none; padding:10px 0; font-size:15px; font-weight:600; color:var(--muted); border-radius:10px; }
   .seg button.active { background:var(--card); color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.12); }
   .mrow { display:flex; justify-content:space-between; font-size:14px; padding:3px 0; color:var(--muted); }
   .mrow b { color:var(--text); font-weight:600; }
   .ytot { font-weight:700; font-size:18px; }
-  .paytotal { display:flex; justify-content:space-between; padding:6px 4px; font-weight:700; }
 </style>
 </head>
 <body>
-<header>
-  <h1 id="title">This month</h1>
-  <button id="refreshBtn" onclick="refresh()" aria-label="Refresh">&#8635;</button>
-</header>
+<header><h1 id="title">This month</h1></header>
 
 <main>
   <section id="home" class="tab active">
     <div id="list"><div class="msg">Loading…</div></div>
-    <div class="sub" id="ver" style="text-align:center;margin-top:16px"></div>
   </section>
 
   <section id="add" class="tab">
@@ -93,6 +92,7 @@
     <input id="note" type="text" placeholder="e.g. amazon">
     <label for="date">Date</label>
     <input id="date" type="date">
+    <label class="chk"><input type="checkbox" id="fromSav"> Paid with money moved from savings</label>
     <button class="btn" id="submit" onclick="submitExpense()">Add Payment</button>
     <div class="err" id="err"></div>
   </section>
@@ -103,12 +103,33 @@
     <div id="payList" style="display:none"><div class="msg">Loading…</div></div>
     <div id="sumList"><div class="msg">Loading…</div></div>
   </section>
+
+  <section id="trip" class="tab">
+    <div class="card" id="tripHead"></div>
+    <div class="seg"><button id="cur-USD" class="active" onclick="setTripCur('USD')">Show in USD</button><button id="cur-BOB" onclick="setTripCur('BOB')">Show in Bolivianos</button></div>
+    <div class="card">
+      <div class="name" style="margin-bottom:4px">Add trip payment</div>
+      <label for="tAmount">Amount</label>
+      <input id="tAmount" type="number" inputmode="decimal" step="0.01" placeholder="0.00">
+      <div class="seg" style="margin-top:10px"><button id="ec-USD" class="active" onclick="setEntryCur('USD')">USD</button><button id="ec-BOB" onclick="setEntryCur('BOB')">Bolivianos (Bs)</button></div>
+      <label for="tDate">Date</label>
+      <input id="tDate" type="date">
+      <label for="tNote">Note (optional)</label>
+      <input id="tNote" type="text" placeholder="e.g. taxi, lunch">
+      <button class="btn" onclick="addTrip()">Add trip payment</button>
+      <div class="err" id="tErr"></div>
+    </div>
+    <div class="seg"><button id="tv-list" class="active" onclick="setTripView('list')">All payments</button><button id="tv-run" onclick="setTripView('run')">Running total</button></div>
+    <div id="tripList"></div>
+    <div class="sub" id="tripSync" style="text-align:center;margin:14px 0"></div>
+  </section>
 </main>
 
 <nav>
   <button id="nav-home" class="active" onclick="show('home')"><span>&#128202;</span>Home</button>
   <button id="nav-add" onclick="show('add')"><span>&#10133;</span>Add payment</button>
   <button id="nav-pay" onclick="show('pay')"><span>&#128203;</span>History</button>
+  <button id="nav-trip" onclick="show('trip')"><span>&#9992;</span>Trip</button>
 </nav>
 
 <div class="overlay" id="setup">
@@ -150,17 +171,77 @@
   </div>
 </div>
 
+<div class="overlay" id="owedDlg" style="align-items:flex-start">
+  <div class="dialog">
+    <h2>Owed to savings</h2>
+    <div class="ytot" id="owedBal"></div>
+    <div class="sub" id="owedHint"></div>
+    <div class="seg" style="margin-top:14px"><button id="ow-borrow" class="active" onclick="setOwedType('borrow')">Moved from savings</button><button id="ow-repay" onclick="setOwedType('repay')">Paid savings back</button></div>
+    <label for="owAmt">Amount</label>
+    <input id="owAmt" type="number" inputmode="decimal" step="0.01" placeholder="0.00">
+    <label for="owNote">Note (optional)</label>
+    <input id="owNote" type="text">
+    <label for="owDate">Date</label>
+    <input id="owDate" type="date">
+    <button class="btn" id="owSave" onclick="saveOwed()">Save</button>
+    <div class="err" id="owErr"></div>
+    <div class="day">History (tap to delete)</div>
+    <div id="owList"></div>
+    <button class="btn alt" onclick="closeOwed()">Close</button>
+  </div>
+</div>
+
+<div class="overlay" id="tripEditDlg">
+  <div class="dialog">
+    <h2>Edit trip payment</h2>
+    <label for="teAmount">Amount</label>
+    <input id="teAmount" type="number" inputmode="decimal" step="0.01">
+    <label for="teCur">Currency</label>
+    <select id="teCur"><option value="USD">USD</option><option value="BOB">Bolivianos (Bs)</option></select>
+    <label for="teDate">Date</label>
+    <input id="teDate" type="date">
+    <label for="teNote">Note</label>
+    <input id="teNote" type="text">
+    <button class="btn" onclick="saveTripEdit()">Save changes</button>
+    <button class="btn alt" onclick="closeTripEdit()">Cancel</button>
+    <button class="btn danger" onclick="deleteTripItem()">Delete payment</button>
+    <div class="err" id="teErr"></div>
+  </div>
+</div>
+
+<div class="overlay" id="tripSetDlg">
+  <div class="dialog">
+    <h2>Trip fund &amp; rate</h2>
+    <label for="tsFund">Trip fund (USD)</label>
+    <input id="tsFund" type="number" inputmode="decimal" step="0.01">
+    <label for="tsRate">Exchange rate (Bs per 1 USD)</label>
+    <input id="tsRate" type="number" inputmode="decimal" step="0.01">
+    <div class="sub" style="margin-top:8px">A new rate applies to payments you add from now on. Existing payments keep the rate they were entered with.</div>
+    <button class="btn" onclick="saveTripSettings()">Save</button>
+    <button class="btn alt" onclick="document.getElementById('tripSetDlg').classList.remove('show')">Cancel</button>
+    <div class="err" id="tsErr"></div>
+  </div>
+</div>
+
 <script>
-  const APP_VERSION = 9;
+  const APP_VERSION = 10;
   let backendVersion = '?', summary = null, payView = 'sum';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money = n => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const bs = n => (n < 0 ? '-' : '') + 'Bs ' + Math.abs(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const fmtC = (n, c) => c === 'USD' ? money(n) : bs(n);
+  const round2 = x => Math.round(x * 100) / 100;
   function today() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
-  const TITLES = { home:'This month', add:'Add a payment', pay:'History' };
-
+  const TITLES = { home:'This month', add:'Add a payment', pay:'History', trip:'Bolivia Trip' };
   function where(e) { const l = String(e && e.stack || '').split('\n').slice(1, 3).map(x => x.trim().replace(/^at /, '')).join(' | '); return l ? '<div class="sub" style="margin-top:8px;word-break:break-all">' + esc(l) + '</div>' : ''; }
+  function dayLabel(ymd) {
+    if (!ymd) return 'No date';
+    const p = ymd.split('-');
+    return new Date(+p[0], +p[1] - 1, +p[2]).toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+  }
+
   // ---------- API ----------
   const cfg = () => ({ url: localStorage.getItem('b_url'), key: localStorage.getItem('b_key') });
   async function call(opts) {
@@ -175,7 +256,6 @@
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     backendVersion = d.version || 'old';
-    $('ver').textContent = 'App v' + APP_VERSION + ' · Backend v' + backendVersion;
     return d;
   }
 
@@ -184,43 +264,22 @@
     if (tab === 'add' && current !== 'add') $('date').value = today();
     current = tab;
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === tab));
-    ['home','add','pay'].forEach(t => $('nav-' + t).classList.toggle('active', t === tab));
+    ['home','add','pay','trip'].forEach(t => $('nav-' + t).classList.toggle('active', t === tab));
     $('title').textContent = TITLES[tab];
-    $('refreshBtn').style.visibility = tab === 'add' ? 'hidden' : 'visible';
     if (tab === 'pay') { payView === 'sum' ? loadSummary() : loadPayments(); }
+    if (tab === 'trip') { $('tDate').value = $('tDate').value || today(); renderTrip(); syncTrip(); }
     window.scrollTo(0, 0);
   }
-  function refresh() { current === 'pay' ? (payView === 'sum' ? loadSummary() : loadPayments()) : load(); }
+  function refresh() {
+    if (current === 'trip') { syncTrip(); return; }
+    current === 'pay' ? (payView === 'sum' ? loadSummary() : loadPayments()) : load();
+  }
   function setPayView(v) {
     payView = v;
     $('seg-list').classList.toggle('active', v === 'list'); $('seg-sum').classList.toggle('active', v === 'sum');
     $('payList').style.display = v === 'list' ? '' : 'none'; $('payBanner').style.display = v === 'list' ? '' : 'none';
     $('sumList').style.display = v === 'sum' ? '' : 'none';
     if (v === 'sum') loadSummary(); else loadPayments();
-  }
-  function loadSummary() {
-    if (!cfg().url) { $('setup').classList.add('show'); return; }
-    $('sumList').innerHTML = '<div class="msg">Loading…</div>';
-    call({ query: 'action=summary' }).then(d => {
-      if (!d || !Array.isArray(d.rows)) {
-        throw new Error('The backend has no year summary yet (it sent: ' + Object.keys(d || {}).join(', ') + '; backend v' + (d && d.version || 'old') +
-          ', app v' + APP_VERSION + '). Paste the latest Code.gs and deploy a New version on BOTH deployments.');
-      }
-      summary = d; renderSummary();
-    }).catch(e => { $('sumList').innerHTML = '<div class="msg err">Couldn\'t load: ' + esc(e.message) + where(e) + '</div>'; });
-  }
-  function sumCard(name, values, yearTotal, months, cur, start, cls) {
-    let h = '<div class="card ' + (cls || '') + '"><div class="row"><span class="name">' + esc(name) + '</span><span class="ytot">' + money(yearTotal) + '</span></div>' +
-      '<div class="sub" style="margin:2px 0 8px">year to date</div>';
-    months.forEach(m => { h += '<div class="mrow"><span>' + m + (m === cur ? ' (so far)' : '') + '</span><b>' + money(values[m] || 0) + '</b></div>'; });
-    if (start !== null && start !== undefined) h += '<div class="sub" style="margin-top:8px">Includes starting total of ' + money(start) + '</div>';
-    return h + '</div>';
-  }
-  function renderSummary() {
-    const s = summary; if (!s) return;
-    let h = sumCard('All categories', s.totals.values, s.totals.yearTotal, s.months, s.current, null, 'total');
-    s.rows.forEach(r => { h += sumCard(r.name, r.values, r.yearTotal, s.months, s.current, r.startingTotal); });
-    $('sumList').innerHTML = h;
   }
 
   // ---------- setup ----------
@@ -245,11 +304,18 @@
       '<div class="row"><span class="left ' + lv + '">' + leftTxt + '</span>' +
       '<span class="sub">' + Math.round(pct) + '%</span></div></div>';
   }
+  function owedCard() {
+    if (!data || typeof data.owed !== 'number') return '';
+    const o = round2(data.owed);
+    const hint = o > 0 ? 'Move ' + money(o) + ' from checking into savings' : o < 0 ? 'You moved ' + money(-o) + ' extra into savings' : 'All caught up';
+    return '<div class="card owed" onclick="openOwed()"><div class="row"><span class="name">Owed to savings</span>' +
+      '<span class="ytot ' + (o > 0 ? 'warn' : 'ok') + '">' + money(o) + '</span></div><div class="sub" style="margin-top:4px">' + hint + ' · tap to update</div></div>';
+  }
   function render() {
     if (!data) return;
     const cats = data.categories;
     const t = data.total || { budget: cats.reduce((a, c) => a + c.budget, 0), spent: cats.reduce((a, c) => a + c.spent, 0) };
-    $('list').innerHTML = card('Total', t.budget, t.spent, 'total') + cats.map(c => card(c.name, c.budget, c.spent)).join('');
+    $('list').innerHTML = card('Total', t.budget, t.spent, 'total') + owedCard() + cats.map(c => card(c.name, c.budget, c.spent)).join('');
     const opts = cats.map(c => '<option>' + esc(c.name) + '</option>').join('');
     const sel = $('cat'), cur = sel.value;
     sel.innerHTML = opts; if (cur) sel.value = cur;
@@ -260,7 +326,8 @@
     call({}).then(d => { data = d; render(); })
       .catch(e => {
         $('list').innerHTML = '<div class="msg err">Couldn\'t load: ' + esc(e.message) + where(e) +
-          '<br><br><button class="btn alt" onclick="localStorage.clear();load()">Re-enter setup</button></div>';
+          '<div class="sub" style="margin-top:10px">The Trip tab still works offline.</div>' +
+          '<br><button class="btn alt" onclick="localStorage.removeItem(\'b_url\');localStorage.removeItem(\'b_key\');load()">Re-enter setup</button></div>';
       });
   }
 
@@ -272,7 +339,7 @@
     const category = $('cat').value;
     if (!category) { $('err').textContent = 'Pick a category.'; return; }
     $('submit').disabled = true; $('submit').textContent = 'Saving…';
-    call({ body: { action: 'add', items: [{ amount: amount, category: category, note: $('note').value, date: $('date').value || undefined }] } })
+    call({ body: { action: 'add', items: [{ amount: amount, category: category, note: $('note').value, date: $('date').value || undefined, fromSavings: $('fromSav').checked }] } })
       .then(d => {
         data = d; render(); payments = null; summary = null;
         $('submit').disabled = false; $('submit').textContent = 'Add Payment';
@@ -286,15 +353,11 @@
         $('err').textContent = 'Save failed: ' + e.message;
       });
   }
-  function more() { $('dlg').classList.remove('show'); $('amount').value = ''; $('note').value = ''; $('amount').focus(); }
-  function done() { $('dlg').classList.remove('show'); $('amount').value = ''; $('note').value = ''; show('home'); }
+  function resetAdd() { $('amount').value = ''; $('note').value = ''; $('fromSav').checked = false; }
+  function more() { $('dlg').classList.remove('show'); resetAdd(); $('amount').focus(); }
+  function done() { $('dlg').classList.remove('show'); resetAdd(); show('home'); }
 
-  // ---------- payments ----------
-  function dayLabel(ymd) {
-    if (!ymd) return 'No date';
-    const p = ymd.split('-');
-    return new Date(+p[0], +p[1] - 1, +p[2]).toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
-  }
+  // ---------- history: payments list ----------
   function loadPayments() {
     if (!cfg().url) { $('setup').classList.add('show'); return; }
     $('payList').innerHTML = '<div class="msg">Loading…</div>';
@@ -349,9 +412,190 @@
       .then(afterEdit).catch(editFail);
   }
 
-  $('date').value = today();
+  // ---------- history: by category ----------
+  function loadSummary() {
+    if (!cfg().url) { $('setup').classList.add('show'); return; }
+    $('sumList').innerHTML = '<div class="msg">Loading…</div>';
+    call({ query: 'action=summary' }).then(d => {
+      if (!d || !Array.isArray(d.rows)) {
+        throw new Error('The backend has no year summary yet (it sent: ' + Object.keys(d || {}).join(', ') + '; backend v' + (d && d.version || 'old') +
+          ', app v' + APP_VERSION + '). Paste the latest Code.gs and deploy a New version on BOTH deployments.');
+      }
+      summary = d; renderSummary();
+    }).catch(e => { $('sumList').innerHTML = '<div class="msg err">Couldn\'t load: ' + esc(e.message) + where(e) + '</div>'; });
+  }
+  function sumCard(name, values, yearTotal, months, cur, start, cls) {
+    let h = '<div class="card ' + (cls || '') + '"><div class="row"><span class="name">' + esc(name) + '</span><span class="ytot">' + money(yearTotal) + '</span></div>' +
+      '<div class="sub" style="margin:2px 0 8px">year to date</div>';
+    months.forEach(m => { h += '<div class="mrow"><span>' + m + (m === cur ? ' (so far)' : '') + '</span><b>' + money(values[m] || 0) + '</b></div>'; });
+    if (start !== null && start !== undefined) h += '<div class="sub" style="margin-top:8px">Includes starting total of ' + money(start) + '</div>';
+    return h + '</div>';
+  }
+  function renderSummary() {
+    const s = summary; if (!s) return;
+    let h = sumCard('All categories', s.totals.values, s.totals.yearTotal, s.months, s.current, null, 'total');
+    s.rows.forEach(r => { h += sumCard(r.name, r.values, r.yearTotal, s.months, s.current, r.startingTotal); });
+    $('sumList').innerHTML = h;
+  }
+
+  // ---------- owed to savings ----------
+  let owedType = 'borrow', owedData = null;
+  function openOwed() {
+    $('owedDlg').classList.add('show'); $('owErr').textContent = ''; $('owDate').value = today();
+    $('owAmt').value = ''; $('owNote').value = ''; setOwedType('borrow');
+    $('owList').innerHTML = '<div class="msg">Loading…</div>';
+    call({ query: 'action=owed' }).then(d => {
+      if (!d || !Array.isArray(d.entries)) throw new Error('Your Apps Script is out of date. Paste the latest Code.gs and deploy a New version on both deployments.');
+      owedData = d; renderOwed();
+    }).catch(e => { $('owList').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; });
+  }
+  function closeOwed() { $('owedDlg').classList.remove('show'); }
+  function setOwedType(t) {
+    owedType = t;
+    $('ow-borrow').classList.toggle('active', t === 'borrow'); $('ow-repay').classList.toggle('active', t === 'repay');
+  }
+  function renderOwed() {
+    const o = round2(owedData.balance);
+    $('owedBal').textContent = money(o); $('owedBal').className = 'ytot ' + (o > 0 ? 'warn' : 'ok');
+    $('owedHint').textContent = o > 0 ? 'Move this from checking into savings to be even.' : o < 0 ? 'You have moved more into savings than you took out.' : 'All caught up.';
+    const rows = owedData.entries.slice().reverse();
+    $('owList').innerHTML = rows.length ? rows.map(e => '<div class="pay" onclick="deleteOwed(' + e.row + ',' + e.amount + ')"><div style="min-width:0"><div class="cat">' +
+      (e.amount > 0 ? 'Moved from savings' : 'Paid savings back') + '</div><div class="note">' + esc(dayLabel(e.date)) + (e.note ? ' · ' + esc(e.note) : '') +
+      '</div></div><div class="amt ' + (e.amount > 0 ? 'warn' : 'ok') + '">' + (e.amount > 0 ? '+' : '-') + money(Math.abs(e.amount)).replace('-', '') + '</div></div>').join('') : '<div class="msg">No entries yet.</div>';
+  }
+  function afterOwed(d) {
+    owedData = d; if (data) { data.owed = d.balance; render(); }
+    $('owSave').disabled = false; $('owAmt').value = ''; $('owNote').value = ''; renderOwed();
+  }
+  function saveOwed() {
+    const amt = parseFloat($('owAmt').value);
+    if (!(amt > 0)) { $('owErr').textContent = 'Enter an amount.'; return; }
+    $('owErr').textContent = ''; $('owSave').disabled = true;
+    call({ body: { action: 'owedAdd', amount: owedType === 'borrow' ? amt : -amt, note: $('owNote').value, date: $('owDate').value || undefined } })
+      .then(afterOwed).catch(e => { $('owSave').disabled = false; $('owErr').textContent = e.message; });
+  }
+  function deleteOwed(row, amount) {
+    if (!confirm('Delete this entry?')) return;
+    call({ body: { action: 'owedDelete', row: row, expected: { amount: amount } } }).then(afterOwed).catch(e => { $('owErr').textContent = e.message; });
+  }
+
+  // ---------- Bolivia trip (works offline; syncs to the sheet when online) ----------
+  const TRIP_KEY = 'trip_v1';
+  function loadTripLocal() { try { const t = JSON.parse(localStorage.getItem(TRIP_KEY)); if (t && Array.isArray(t.items)) return t; } catch (e) {} return null; }
+  let trip = loadTripLocal();
+  let hadLocalTrip = !!trip;
+  if (!trip) trip = { fund: 2500, rate: 6.96, items: [], dirty: false, lastSync: null };
+  let tripCur = 'USD', tripView = 'list', entryCur = 'USD', tripEditId = null, syncing = false;
+  function saveTrip() { try { localStorage.setItem(TRIP_KEY, JSON.stringify(trip)); } catch (e) {} }
+  function tripCalc(amount, currency, rate) {
+    return currency === 'USD' ? { usd: round2(amount), bob: round2(amount * rate) } : { bob: round2(amount), usd: round2(amount / rate) };
+  }
+  function setTripCur(c) { tripCur = c; ['USD','BOB'].forEach(x => $('cur-' + x).classList.toggle('active', x === c)); renderTrip(); }
+  function setEntryCur(c) { entryCur = c; ['USD','BOB'].forEach(x => $('ec-' + x).classList.toggle('active', x === c)); }
+  function setTripView(v) { tripView = v; $('tv-list').classList.toggle('active', v === 'list'); $('tv-run').classList.toggle('active', v === 'run'); renderTrip(); }
+  function renderTrip() {
+    const items = trip.items;
+    const spentUSD = items.reduce((a, i) => a + i.usd, 0), spentBOB = items.reduce((a, i) => a + i.bob, 0);
+    const fundUSD = trip.fund, fundBOB = trip.fund * trip.rate;
+    const fund = tripCur === 'USD' ? fundUSD : fundBOB, spent = tripCur === 'USD' ? spentUSD : spentBOB, left = fund - spent;
+    const pct = fundUSD > 0 ? (spentUSD / fundUSD) * 100 : 0, lv = level(pct);
+    $('tripHead').innerHTML = '<div class="row"><span class="name">Trip fund</span><span class="sub">' + fmtC(spent, tripCur) + ' of ' + fmtC(fund, tripCur) + '</span></div>' +
+      '<div class="track"><div class="fill bg-' + lv + '" style="width:' + Math.min(pct, 100) + '%"></div></div>' +
+      '<div class="row"><span class="left ' + lv + '">' + (left >= 0 ? fmtC(left, tripCur) + ' left' : fmtC(-left, tripCur) + ' over') + '</span><span class="sub">' + Math.round(pct) + '%</span></div>' +
+      '<div class="row" style="margin-top:8px"><span class="sub">1 USD = ' + trip.rate + ' Bs</span><button class="linkbtn" onclick="openTripSettings()">Edit fund &amp; rate</button></div>';
+    const order = items.map((it, idx) => ({ it: it, idx: idx })).sort((a, b) => (a.it.date < b.it.date ? -1 : a.it.date > b.it.date ? 1 : a.idx - b.idx));
+    let cu = 0, cb = 0;
+    const rows = order.map(o => { cu += o.it.usd; cb += o.it.bob; return { it: o.it, runUSD: cu, runBOB: cb }; });
+    if (!rows.length) { $('tripList').innerHTML = '<div class="msg">No trip payments yet.</div>'; renderSyncStatus(); return; }
+    let h = '', last = null;
+    rows.slice().reverse().forEach(r => {
+      const it = r.it;
+      if (it.date !== last) { h += '<div class="day">' + esc(dayLabel(it.date)) + '</div>'; last = it.date; }
+      const val = tripCur === 'USD' ? it.usd : it.bob;
+      const entered = it.currency !== tripCur ? ' · entered ' + fmtC(it.amount, it.currency) : '';
+      let right;
+      if (tripView === 'run') {
+        const spentRun = tripCur === 'USD' ? r.runUSD : r.runBOB;
+        right = fmtC(fund - spentRun, tripCur) + '<div class="sub">left · ' + fmtC(spentRun, tripCur) + ' spent</div>';
+      } else right = fmtC(val, tripCur);
+      h += '<div class="pay" onclick="openTripEdit(\'' + esc(it.id) + '\')"><div style="min-width:0"><div class="cat">' + (it.note ? esc(it.note) : 'Trip payment') + '</div>' +
+        '<div class="note">' + (tripView === 'run' ? fmtC(val, tripCur) + entered.replace(' · ', ' ') : entered.replace(' · ', '')) + '</div></div><div class="amt">' + right + '</div></div>';
+    });
+    $('tripList').innerHTML = h; renderSyncStatus();
+  }
+  function addTrip() {
+    const amt = parseFloat($('tAmount').value);
+    $('tErr').textContent = '';
+    if (!(amt > 0)) { $('tErr').textContent = 'Enter an amount.'; return; }
+    const calc = tripCalc(amt, entryCur, trip.rate);
+    trip.items.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: $('tDate').value || today(), amount: amt, currency: entryCur,
+      rate: trip.rate, usd: calc.usd, bob: calc.bob, note: $('tNote').value.trim() });
+    trip.dirty = true; saveTrip();
+    $('tAmount').value = ''; $('tNote').value = '';
+    renderTrip(); syncTrip();
+  }
+  function openTripEdit(id) {
+    const it = trip.items.find(x => x.id === id); if (!it) return;
+    tripEditId = id; $('teAmount').value = it.amount; $('teCur').value = it.currency; $('teDate').value = it.date; $('teNote').value = it.note; $('teErr').textContent = '';
+    $('tripEditDlg').classList.add('show');
+  }
+  function closeTripEdit() { $('tripEditDlg').classList.remove('show'); tripEditId = null; }
+  function saveTripEdit() {
+    const it = trip.items.find(x => x.id === tripEditId); if (!it) return;
+    const amt = parseFloat($('teAmount').value);
+    if (!(amt > 0)) { $('teErr').textContent = 'Enter an amount.'; return; }
+    it.amount = amt; it.currency = $('teCur').value; it.date = $('teDate').value || it.date; it.note = $('teNote').value.trim();
+    Object.assign(it, tripCalc(amt, it.currency, it.rate));
+    trip.dirty = true; saveTrip(); closeTripEdit(); renderTrip(); syncTrip();
+  }
+  function deleteTripItem() {
+    if (!confirm('Delete this trip payment?')) return;
+    trip.items = trip.items.filter(x => x.id !== tripEditId);
+    trip.dirty = true; saveTrip(); closeTripEdit(); renderTrip(); syncTrip();
+  }
+  function openTripSettings() { $('tsFund').value = trip.fund; $('tsRate').value = trip.rate; $('tsErr').textContent = ''; $('tripSetDlg').classList.add('show'); }
+  function saveTripSettings() {
+    const f = parseFloat($('tsFund').value), r = parseFloat($('tsRate').value);
+    if (!(f > 0) || !(r > 0)) { $('tsErr').textContent = 'Enter a fund and a rate above zero.'; return; }
+    trip.fund = f; trip.rate = r; trip.dirty = true; saveTrip();
+    $('tripSetDlg').classList.remove('show'); renderTrip(); syncTrip();
+  }
+  function renderSyncStatus() {
+    const el = $('tripSync'); if (!el) return;
+    let t;
+    if (trip.dirty) t = (navigator.onLine && cfg().url) ? (trip.syncError ? 'Saved on this phone. Sync problem: ' + trip.syncError : 'Saved on this phone. Syncing…') : 'Saved on this phone. Will sync to your sheet when you are online.';
+    else t = trip.lastSync ? 'Saved on this phone and synced to your sheet at ' + new Date(trip.lastSync).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : 'Saved on this phone.';
+    el.textContent = t;
+  }
+  async function syncTrip() {
+    renderSyncStatus();
+    if (!trip.dirty || !navigator.onLine || !cfg().url || syncing) return;
+    syncing = true;
+    try {
+      await call({ body: { action: 'tripSave', trip: { fund: trip.fund, rate: trip.rate, items: trip.items } } });
+      trip.dirty = false; trip.lastSync = new Date().toISOString(); delete trip.syncError;
+    } catch (e) { trip.syncError = e.message; }
+    syncing = false; saveTrip(); renderSyncStatus();
+  }
+  async function hydrateTrip() {
+    if (hadLocalTrip || !navigator.onLine || !cfg().url) return;   // new phone: pull the sheet copy once, if there is one
+    try {
+      const d = await call({ query: 'action=trip' });
+      if (d && d.exists && !hadLocalTrip && !trip.items.length) {
+        trip = { fund: d.fund || 2500, rate: d.rate || 6.96, items: d.items || [], dirty: false, lastSync: new Date().toISOString() };
+        saveTrip(); renderTrip();
+      }
+    } catch (e) {}
+  }
+
+  window.addEventListener('online', syncTrip);
+  // no refresh button: reload the data whenever you come back to the app
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && !document.querySelector('.overlay.show')) refresh();
+  });
+  $('date').value = today(); $('tDate').value = today();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
-  load();
+  renderTrip(); load(); hydrateTrip(); syncTrip();
 </script>
 </body>
 </html>

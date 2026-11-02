@@ -106,12 +106,12 @@
 
   <section id="trip" class="tab">
     <div class="card" id="tripHead"></div>
-    <div class="seg"><button id="cur-USD" class="active" onclick="setTripCur('USD')">Show in USD</button><button id="cur-BOB" onclick="setTripCur('BOB')">Show in Bolivianos</button></div>
+    <div class="seg"><button id="cur-BOB" class="active" onclick="setTripCur('BOB')">Show in Bolivianos</button><button id="cur-USD" onclick="setTripCur('USD')">Show in USD</button></div>
     <div class="card">
       <div class="name" style="margin-bottom:4px">Add trip payment</div>
       <label for="tAmount">Amount</label>
       <input id="tAmount" type="number" inputmode="decimal" step="0.01" placeholder="0.00">
-      <div class="seg" style="margin-top:10px"><button id="ec-USD" class="active" onclick="setEntryCur('USD')">USD</button><button id="ec-BOB" onclick="setEntryCur('BOB')">Bolivianos (Bs)</button></div>
+      <div class="seg" style="margin-top:10px"><button id="ec-BOB" class="active" onclick="setEntryCur('BOB')">Bolivianos (Bs)</button><button id="ec-USD" onclick="setEntryCur('USD')">USD</button></div>
       <label for="tDate">Date</label>
       <input id="tDate" type="date">
       <label for="tNote">Note (optional)</label>
@@ -119,7 +119,6 @@
       <button class="btn" onclick="addTrip()">Add trip payment</button>
       <div class="err" id="tErr"></div>
     </div>
-    <div class="seg"><button id="tv-list" class="active" onclick="setTripView('list')">All payments</button><button id="tv-run" onclick="setTripView('run')">Running total</button></div>
     <div id="tripList"></div>
     <div class="sub" id="tripSync" style="text-align:center;margin:14px 0"></div>
   </section>
@@ -485,14 +484,13 @@
   let trip = loadTripLocal();
   let hadLocalTrip = !!trip;
   if (!trip) trip = { fund: 2500, rate: 6.96, items: [], dirty: false, lastSync: null };
-  let tripCur = 'USD', tripView = 'list', entryCur = 'USD', tripEditId = null, syncing = false;
+  let tripCur = 'BOB', entryCur = 'BOB', tripEditId = null, syncing = false;
   function saveTrip() { try { localStorage.setItem(TRIP_KEY, JSON.stringify(trip)); } catch (e) {} }
   function tripCalc(amount, currency, rate) {
     return currency === 'USD' ? { usd: round2(amount), bob: round2(amount * rate) } : { bob: round2(amount), usd: round2(amount / rate) };
   }
   function setTripCur(c) { tripCur = c; ['USD','BOB'].forEach(x => $('cur-' + x).classList.toggle('active', x === c)); renderTrip(); }
   function setEntryCur(c) { entryCur = c; ['USD','BOB'].forEach(x => $('ec-' + x).classList.toggle('active', x === c)); }
-  function setTripView(v) { tripView = v; $('tv-list').classList.toggle('active', v === 'list'); $('tv-run').classList.toggle('active', v === 'run'); renderTrip(); }
   function renderTrip() {
     const items = trip.items;
     const spentUSD = items.reduce((a, i) => a + i.usd, 0), spentBOB = items.reduce((a, i) => a + i.bob, 0);
@@ -503,23 +501,16 @@
       '<div class="track"><div class="fill bg-' + lv + '" style="width:' + Math.min(pct, 100) + '%"></div></div>' +
       '<div class="row"><span class="left ' + lv + '">' + (left >= 0 ? fmtC(left, tripCur) + ' left' : fmtC(-left, tripCur) + ' over') + '</span><span class="sub">' + Math.round(pct) + '%</span></div>' +
       '<div class="row" style="margin-top:8px"><span class="sub">1 USD = ' + trip.rate + ' Bs</span><button class="linkbtn" onclick="openTripSettings()">Edit fund &amp; rate</button></div>';
-    const order = items.map((it, idx) => ({ it: it, idx: idx })).sort((a, b) => (a.it.date < b.it.date ? -1 : a.it.date > b.it.date ? 1 : a.idx - b.idx));
-    let cu = 0, cb = 0;
-    const rows = order.map(o => { cu += o.it.usd; cb += o.it.bob; return { it: o.it, runUSD: cu, runBOB: cb }; });
+    const rows = items.map((it, idx) => ({ it: it, idx: idx })).sort((a, b) => (a.it.date < b.it.date ? -1 : a.it.date > b.it.date ? 1 : a.idx - b.idx));
     if (!rows.length) { $('tripList').innerHTML = '<div class="msg">No trip payments yet.</div>'; renderSyncStatus(); return; }
     let h = '', last = null;
     rows.slice().reverse().forEach(r => {
       const it = r.it;
       if (it.date !== last) { h += '<div class="day">' + esc(dayLabel(it.date)) + '</div>'; last = it.date; }
       const val = tripCur === 'USD' ? it.usd : it.bob;
-      const entered = it.currency !== tripCur ? ' · entered ' + fmtC(it.amount, it.currency) : '';
-      let right;
-      if (tripView === 'run') {
-        const spentRun = tripCur === 'USD' ? r.runUSD : r.runBOB;
-        right = fmtC(fund - spentRun, tripCur) + '<div class="sub">left · ' + fmtC(spentRun, tripCur) + ' spent</div>';
-      } else right = fmtC(val, tripCur);
+      const entered = it.currency !== tripCur ? 'entered ' + fmtC(it.amount, it.currency) : '';
       h += '<div class="pay" onclick="openTripEdit(\'' + esc(it.id) + '\')"><div style="min-width:0"><div class="cat">' + (it.note ? esc(it.note) : 'Trip payment') + '</div>' +
-        '<div class="note">' + (tripView === 'run' ? fmtC(val, tripCur) + entered.replace(' · ', ' ') : entered.replace(' · ', '')) + '</div></div><div class="amt">' + right + '</div></div>';
+        (entered ? '<div class="note">' + entered + '</div>' : '') + '</div><div class="amt">' + fmtC(val, tripCur) + '</div></div>';
     });
     $('tripList').innerHTML = h; renderSyncStatus();
   }
@@ -562,10 +553,7 @@
   }
   function renderSyncStatus() {
     const el = $('tripSync'); if (!el) return;
-    let t;
-    if (trip.dirty) t = (navigator.onLine && cfg().url) ? (trip.syncError ? 'Saved on this phone. Sync problem: ' + trip.syncError : 'Saved on this phone. Syncing…') : 'Saved on this phone. Will sync to your sheet when you are online.';
-    else t = trip.lastSync ? 'Saved on this phone and synced to your sheet at ' + new Date(trip.lastSync).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }) : 'Saved on this phone.';
-    el.textContent = t;
+    el.textContent = (trip.dirty && trip.syncError) ? 'Could not sync to your sheet: ' + trip.syncError : '';
   }
   async function syncTrip() {
     renderSyncStatus();

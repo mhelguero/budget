@@ -102,10 +102,10 @@
 
   <section id="pay" class="tab">
     <div class="seg"><button id="seg-sum" class="active" onclick="setPayView('sum')">By category</button><button id="seg-list" onclick="setPayView('list')">This Month</button></div>
+    <div style="text-align:right;margin:2px 4px 0"><button class="linkbtn" id="rulesBtn" onclick="openRules()">Merchant rules &#8250;</button></div>
     <div id="payBanner" style="display:none"></div>
     <div id="payList" style="display:none"><div class="msg">Loading…</div></div>
     <div id="sumList"><div class="msg">Loading…</div></div>
-    <button class="btn alt" style="margin-top:24px" onclick="openRules()">Merchant rules</button>
   </section>
 
   <section id="trip" class="tab">
@@ -208,6 +208,7 @@
   <div class="dialog">
     <h2 id="impTitle">Charge</h2>
     <div class="sub" id="impSub"></div>
+    <div class="banner" id="impAi" style="display:none">The AI picked this category. If it's wrong, choose the right one; "Remember this merchant" makes it a rule.</div>
     <div class="chips" id="impChips"></div>
     <label for="impCat">Category</label>
     <select id="impCat"></select>
@@ -287,7 +288,7 @@
 </div>
 
 <script>
-  const APP_VERSION = 11;
+  const APP_VERSION = 12;
   let backendVersion = '?', summary = null, payView = 'sum';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
@@ -296,6 +297,8 @@
   const bs = n => (n < 0 ? '-' : '') + 'Bs ' + Math.abs(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   const fmtC = (n, c) => c === 'USD' ? money(n) : bs(n);
   const round2 = x => Math.round(x * 100) / 100;
+  // category names match whatever their capitalization; returns the spelling used in the list
+  const canonName = (n, list) => (list || []).find(x => x.toLowerCase() === String(n == null ? '' : n).trim().toLowerCase()) || n;
   function today() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
   const TITLES = { home:'This month', add:'Add a payment', pay:'History', trip:'Bolivia Trip' };
   function where(e) { const l = String(e && e.stack || '').split('\n').slice(1, 3).map(x => x.trim().replace(/^at /, '')).join(' | '); return l ? '<div class="sub" style="margin-top:8px;word-break:break-all">' + esc(l) + '</div>' : ''; }
@@ -376,10 +379,10 @@
   }
   function chaseCard() {
     if (!data || (!data.pendingCount && !data.recentImports)) return '';
-    const p = data.pendingCount || 0;
+    const p = data.pendingCount || 0, ai = data.aiRecent || 0;
     return '<div class="card owed" onclick="openChase()"><div class="row"><span class="name">Chase charges</span><span class="ytot ' + (p ? 'warn' : 'ok') + '">' +
       (p ? p + ' need' + (p === 1 ? 's' : '') + ' a category' : data.recentImports + ' new') + '</span></div><div class="sub" style="margin-top:4px">' +
-      (p ? 'Tap to pick a category and add them to your budget' : 'Added automatically from your alert emails · tap to review') + '</div></div>';
+      (p ? 'Tap to pick a category and add them to your budget' : 'Added automatically from your alert emails' + (ai ? ' · ' + ai + ' picked by AI' : '') + ' · tap to review') + '</div></div>';
   }
   function render() {
     if (!data) return;
@@ -413,7 +416,7 @@
       .then(d => {
         data = d; render(); payments = null; summary = null;
         $('submit').disabled = false; $('submit').textContent = 'Add Payment';
-        const c = d.categories.find(x => x.name === category);
+        const c = d.categories.find(x => x.name.toLowerCase() === category.toLowerCase());
         if (c) { const left = c.budget - c.spent;
           $('dlgInfo').textContent = category + ': ' + (left >= 0 ? money(left) + ' left this month' : money(-left) + ' over budget'); }
         $('dlg').classList.add('show');
@@ -458,9 +461,10 @@
     const p = payments.payments[i]; editing = p;
     $('eAmount').value = p.amount; $('eNote').value = p.note; $('eDate').value = p.effectiveDate || '';
     const names = (data ? data.categories.map(c => c.name) : []);
-    if (names.indexOf(p.category) < 0) names.push(p.category);
+    const curCat = canonName(p.category, names);
+    if (names.indexOf(curCat) < 0) names.push(curCat);
     $('eCat').innerHTML = names.map(n => '<option>' + esc(n) + '</option>').join('');
-    $('eCat').value = p.category; $('eErr').textContent = '';
+    $('eCat').value = curCat; $('eErr').textContent = '';
     $('editDlg').classList.add('show');
   }
   function closeEdit() { $('editDlg').classList.remove('show'); editing = null; }
@@ -522,7 +526,8 @@
   function renderChase() {
     const list = imports.imports;
     $('chaseList').innerHTML = list.length ? list.map((x, i) => '<div class="pay" onclick="openImp(' + i + ')"><div style="min-width:0"><div class="cat">' + esc(x.merchant) + '</div>' +
-      '<div class="note">' + esc(dayLabel(x.date)) + ' · ' + (x.status === 'pending' ? '<span class="warn">Needs a category</span>' : esc(x.category)) + '</div></div><div class="amt">' + money(x.amount) + '</div></div>').join('')
+      '<div class="note">' + esc(dayLabel(x.date)) + ' · ' + (x.status === 'pending' ? '<span class="warn">Needs a category</span>' : esc(x.category) + (x.source === 'ai' ? '<span class="badge">AI</span>' : '')) +
+      '</div></div><div class="amt">' + money(x.amount) + '</div></div>').join('')
       : '<div class="msg">No Chase charges yet.</div>';
   }
   function deriveKeyword(m) {
@@ -533,16 +538,17 @@
     $('impTitle').textContent = x.merchant; $('impSub').textContent = money(x.amount) + ' · ' + dayLabel(x.date);
     const cats = imports.categories || [];
     $('impCat').innerHTML = '<option value="">Choose a category</option>' + cats.map(n => '<option>' + esc(n) + '</option>').join('');
-    $('impCat').value = x.category || (x.choices.length ? x.choices.find(c => c.auto) ? x.choices.find(c => c.auto).category : x.choices[0].category : '');
+    $('impCat').value = canonName(x.category || (x.choices.length ? x.choices.find(c => c.auto) ? x.choices.find(c => c.auto).category : x.choices[0].category : ''), cats);
     $('impChips').innerHTML = x.choices.map((c, k) => '<button class="chip' + (c.category.toLowerCase() === String($('impCat').value).toLowerCase() ? ' active' : '') + '" onclick="pickChoice(' + k + ')">' + esc(c.label) + '</button>').join('');
-    $('impRemember').checked = x.status === 'pending' && !x.choices.length; $('impKw').value = deriveKeyword(x.merchant);
+    $('impAi').style.display = x.source === 'ai' ? '' : 'none';
+    $('impRemember').checked = x.source === 'ai' || (x.status === 'pending' && !x.choices.length); $('impKw').value = deriveKeyword(x.merchant);
     $('impKwWrap').style.display = $('impRemember').checked ? '' : 'none';
     $('impSkip').style.display = x.status === 'pending' ? '' : 'none';
     $('impSave').textContent = x.status === 'pending' ? 'Add to budget' : 'Save category';
     $('impDlg').classList.add('show');
   }
   function pickChoice(k) {
-    const c = impEditing.choices[k]; $('impCat').value = c.category; impLabel = c.label;
+    const c = impEditing.choices[k]; $('impCat').value = canonName(c.category, imports.categories); impLabel = c.label;
     [...$('impChips').children].forEach((b, j) => b.classList.toggle('active', j === k));
   }
   function closeImp() { $('impDlg').classList.remove('show'); impEditing = null; }
@@ -587,7 +593,7 @@
     if (!m || !rulesData) { out.textContent = ''; return; }
     const hits = rulesData.rules.filter(r => r.active && m.indexOf(r.keyword) >= 0).sort((a, b) => b.keyword.length - a.keyword.length || a.row - b.row);
     const auto = hits.find(r => r.auto);
-    if (!hits.length) { out.textContent = 'No rule matches. This charge would wait for you to pick a category.'; return; }
+    if (!hits.length) { out.textContent = rulesData.aiEnabled ? 'No rule matches. The AI would pick a category (marked "AI" so you can check it).' : 'No rule matches. This charge would wait for you to pick a category.'; return; }
     const others = hits.filter(r => r !== auto);
     out.textContent = (auto ? 'Goes to ' + auto.category + ' automatically (' + (auto.label || auto.keyword) + ').' : 'Only choice-only rules match, so it would wait for you.') +
       (others.length ? ' Other options: ' + others.map(r => r.label || r.category).join(', ') + '.' : '');

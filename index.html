@@ -72,6 +72,10 @@
   .seg button.active { background:var(--card); color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.12); }
   .mrow { display:flex; justify-content:space-between; font-size:14px; padding:3px 0; color:var(--muted); }
   .mrow b { color:var(--text); font-weight:600; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 4px; }
+  .chip { padding:10px 12px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--text); font-size:15px; font-weight:600; }
+  .chip.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .badge { font-size:11px; font-weight:700; padding:2px 7px; border-radius:99px; background:var(--track); color:var(--muted); margin-left:6px; }
   .ytot { font-weight:700; font-size:18px; }
 </style>
 </head>
@@ -92,7 +96,6 @@
     <input id="note" type="text" placeholder="e.g. amazon">
     <label for="date">Date</label>
     <input id="date" type="date">
-    <label class="chk"><input type="checkbox" id="fromSav"> Paid with money moved from savings</label>
     <button class="btn" id="submit" onclick="submitExpense()">Add Payment</button>
     <div class="err" id="err"></div>
   </section>
@@ -102,6 +105,7 @@
     <div id="payBanner" style="display:none"></div>
     <div id="payList" style="display:none"><div class="msg">Loading…</div></div>
     <div id="sumList"><div class="msg">Loading…</div></div>
+    <button class="btn alt" style="margin-top:24px" onclick="openRules()">Merchant rules</button>
   </section>
 
   <section id="trip" class="tab">
@@ -190,6 +194,66 @@
   </div>
 </div>
 
+
+<div class="overlay" id="chaseDlg" style="align-items:flex-start">
+  <div class="dialog">
+    <h2>Chase charges</h2>
+    <div class="sub">New charges found in your Chase alert emails. Tap one to set or change its category.</div>
+    <div id="chaseList" style="margin-top:10px"></div>
+    <button class="btn alt" onclick="closeChase()">Close</button>
+  </div>
+</div>
+
+<div class="overlay" id="impDlg">
+  <div class="dialog">
+    <h2 id="impTitle">Charge</h2>
+    <div class="sub" id="impSub"></div>
+    <div class="chips" id="impChips"></div>
+    <label for="impCat">Category</label>
+    <select id="impCat"></select>
+    <label class="chk"><input type="checkbox" id="impRemember"> Remember this merchant</label>
+    <div id="impKwWrap" style="display:none"><label for="impKw">Match merchants containing</label><input id="impKw" type="text"></div>
+    <button class="btn" id="impSave" onclick="saveImp()">Save category</button>
+    <button class="btn alt" id="impSkip" onclick="skipImp()">Don't add this charge</button>
+    <button class="btn alt" onclick="closeImp()">Cancel</button>
+    <div class="err" id="impErr"></div>
+  </div>
+</div>
+
+<div class="overlay" id="rulesDlg" style="align-items:flex-start">
+  <div class="dialog">
+    <h2>Merchant rules</h2>
+    <div class="sub">When a Chase charge contains a rule's keyword, it goes to that category automatically.</div>
+    <label for="ruleTest">Test a merchant name</label>
+    <input id="ruleTest" type="text" placeholder="e.g. SAMS CLUB #6338" oninput="renderRuleTest()">
+    <div id="ruleTestOut" class="sub" style="margin-top:8px"></div>
+    <label for="ruleSearch">Search rules</label>
+    <input id="ruleSearch" type="text" placeholder="keyword or category" oninput="renderRules()">
+    <div id="ruleList" style="margin-top:10px"></div>
+    <button class="btn" onclick="openRuleEdit(null)">Add rule</button>
+    <button class="btn alt" onclick="closeRules()">Close</button>
+  </div>
+</div>
+
+<div class="overlay" id="ruleEditDlg">
+  <div class="dialog">
+    <h2 id="reTitle">Rule</h2>
+    <label for="reKw">Keyword (found anywhere in the merchant name)</label>
+    <input id="reKw" type="text" placeholder="e.g. SAMS CLUB">
+    <label for="reCat">Category</label>
+    <select id="reCat"></select>
+    <label for="reLabel">Name (optional)</label>
+    <input id="reLabel" type="text" placeholder="e.g. Sam's Club Gas">
+    <label class="chk"><input type="checkbox" id="reActive" checked> Rule is on</label>
+    <label class="chk"><input type="checkbox" id="reAuto" checked> Apply automatically to new charges</label>
+    <div class="sub" style="margin-top:6px">Turn "automatically" off to keep this as a one-tap choice only. With two rules on the same keyword, the first automatic one wins.</div>
+    <button class="btn" id="reSave" onclick="saveRule()">Save rule</button>
+    <button class="btn alt" onclick="closeRuleEdit()">Cancel</button>
+    <button class="btn danger" id="reDel" onclick="deleteRule()">Delete rule</button>
+    <div class="err" id="reErr"></div>
+  </div>
+</div>
+
 <div class="overlay" id="tripEditDlg">
   <div class="dialog">
     <h2>Edit trip payment</h2>
@@ -223,7 +287,7 @@
 </div>
 
 <script>
-  const APP_VERSION = 10;
+  const APP_VERSION = 11;
   let backendVersion = '?', summary = null, payView = 'sum';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
@@ -310,11 +374,18 @@
     return '<div class="card owed" onclick="openOwed()"><div class="row"><span class="name">Owed to savings</span>' +
       '<span class="ytot ' + (o > 0 ? 'warn' : 'ok') + '">' + money(o) + '</span></div><div class="sub" style="margin-top:4px">' + hint + ' · tap to update</div></div>';
   }
+  function chaseCard() {
+    if (!data || (!data.pendingCount && !data.recentImports)) return '';
+    const p = data.pendingCount || 0;
+    return '<div class="card owed" onclick="openChase()"><div class="row"><span class="name">Chase charges</span><span class="ytot ' + (p ? 'warn' : 'ok') + '">' +
+      (p ? p + ' need' + (p === 1 ? 's' : '') + ' a category' : data.recentImports + ' new') + '</span></div><div class="sub" style="margin-top:4px">' +
+      (p ? 'Tap to pick a category and add them to your budget' : 'Added automatically from your alert emails · tap to review') + '</div></div>';
+  }
   function render() {
     if (!data) return;
     const cats = data.categories;
     const t = data.total || { budget: cats.reduce((a, c) => a + c.budget, 0), spent: cats.reduce((a, c) => a + c.spent, 0) };
-    $('list').innerHTML = card('Total', t.budget, t.spent, 'total') + owedCard() + cats.map(c => card(c.name, c.budget, c.spent)).join('');
+    $('list').innerHTML = card('Total', t.budget, t.spent, 'total') + chaseCard() + owedCard() + cats.map(c => card(c.name, c.budget, c.spent)).join('');
     const opts = cats.map(c => '<option>' + esc(c.name) + '</option>').join('');
     const sel = $('cat'), cur = sel.value;
     sel.innerHTML = opts; if (cur) sel.value = cur;
@@ -338,7 +409,7 @@
     const category = $('cat').value;
     if (!category) { $('err').textContent = 'Pick a category.'; return; }
     $('submit').disabled = true; $('submit').textContent = 'Saving…';
-    call({ body: { action: 'add', items: [{ amount: amount, category: category, note: $('note').value, date: $('date').value || undefined, fromSavings: $('fromSav').checked }] } })
+    call({ body: { action: 'add', items: [{ amount: amount, category: category, note: $('note').value, date: $('date').value || undefined }] } })
       .then(d => {
         data = d; render(); payments = null; summary = null;
         $('submit').disabled = false; $('submit').textContent = 'Add Payment';
@@ -352,7 +423,7 @@
         $('err').textContent = 'Save failed: ' + e.message;
       });
   }
-  function resetAdd() { $('amount').value = ''; $('note').value = ''; $('fromSav').checked = false; }
+  function resetAdd() { $('amount').value = ''; $('note').value = ''; }
   function more() { $('dlg').classList.remove('show'); resetAdd(); $('amount').focus(); }
   function done() { $('dlg').classList.remove('show'); resetAdd(); show('home'); }
 
@@ -435,6 +506,116 @@
     let h = sumCard('All categories', s.totals.values, s.totals.yearTotal, s.months, s.current, null, 'total');
     s.rows.forEach(r => { h += sumCard(r.name, r.values, r.yearTotal, s.months, s.current, r.startingTotal); });
     $('sumList').innerHTML = h;
+  }
+
+
+  // ---------- Chase charges ----------
+  let imports = null, impEditing = null, impLabel = '';
+  function openChase() {
+    $('chaseDlg').classList.add('show'); $('chaseList').innerHTML = '<div class="msg">Loading…</div>';
+    call({ query: 'action=imports' }).then(d => {
+      if (!d || !Array.isArray(d.imports)) throw new Error('Your Apps Script is out of date. Paste the latest Code.gs and deploy a New version on both deployments.');
+      imports = d; renderChase();
+    }).catch(e => { $('chaseList').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; });
+  }
+  function closeChase() { $('chaseDlg').classList.remove('show'); }
+  function renderChase() {
+    const list = imports.imports;
+    $('chaseList').innerHTML = list.length ? list.map((x, i) => '<div class="pay" onclick="openImp(' + i + ')"><div style="min-width:0"><div class="cat">' + esc(x.merchant) + '</div>' +
+      '<div class="note">' + esc(dayLabel(x.date)) + ' · ' + (x.status === 'pending' ? '<span class="warn">Needs a category</span>' : esc(x.category)) + '</div></div><div class="amt">' + money(x.amount) + '</div></div>').join('')
+      : '<div class="msg">No Chase charges yet.</div>';
+  }
+  function deriveKeyword(m) {
+    return String(m).toUpperCase().replace(/#.*$/, '').replace(/\s+[\d][\d\s-]*$/, '').replace(/\s+/g, ' ').trim();
+  }
+  function openImp(i) {
+    const x = imports.imports[i]; impEditing = x; impLabel = ''; $('impErr').textContent = '';
+    $('impTitle').textContent = x.merchant; $('impSub').textContent = money(x.amount) + ' · ' + dayLabel(x.date);
+    const cats = imports.categories || [];
+    $('impCat').innerHTML = '<option value="">Choose a category</option>' + cats.map(n => '<option>' + esc(n) + '</option>').join('');
+    $('impCat').value = x.category || (x.choices.length ? x.choices.find(c => c.auto) ? x.choices.find(c => c.auto).category : x.choices[0].category : '');
+    $('impChips').innerHTML = x.choices.map((c, k) => '<button class="chip' + (c.category.toLowerCase() === String($('impCat').value).toLowerCase() ? ' active' : '') + '" onclick="pickChoice(' + k + ')">' + esc(c.label) + '</button>').join('');
+    $('impRemember').checked = x.status === 'pending' && !x.choices.length; $('impKw').value = deriveKeyword(x.merchant);
+    $('impKwWrap').style.display = $('impRemember').checked ? '' : 'none';
+    $('impSkip').style.display = x.status === 'pending' ? '' : 'none';
+    $('impSave').textContent = x.status === 'pending' ? 'Add to budget' : 'Save category';
+    $('impDlg').classList.add('show');
+  }
+  function pickChoice(k) {
+    const c = impEditing.choices[k]; $('impCat').value = c.category; impLabel = c.label;
+    [...$('impChips').children].forEach((b, j) => b.classList.toggle('active', j === k));
+  }
+  function closeImp() { $('impDlg').classList.remove('show'); impEditing = null; }
+  function afterImp(d) {
+    data = d.data; render(); imports = d.imports; summary = null; payments = null; closeImp(); renderChase();
+    $('impSave').disabled = false; $('impSkip').disabled = false;
+  }
+  function impFail(e) { $('impSave').disabled = false; $('impSkip').disabled = false; $('impErr').textContent = e.message; }
+  function saveImp() {
+    if (!$('impCat').value) { $('impErr').textContent = 'Pick a category.'; return; }
+    $('impSave').disabled = true; $('impSkip').disabled = true;
+    const body = { action: 'importSet', row: impEditing.row, category: $('impCat').value, expected: { merchant: impEditing.merchant, amount: impEditing.amount } };
+    if ($('impRemember').checked && $('impKw').value.trim()) body.remember = { keyword: $('impKw').value.trim(), label: impLabel };
+    call({ body: body }).then(afterImp).catch(impFail);
+  }
+  function skipImp() {
+    if (!confirm('Leave this charge out of your budget?')) return;
+    $('impSave').disabled = true; $('impSkip').disabled = true;
+    call({ body: { action: 'importSkip', row: impEditing.row, expected: { merchant: impEditing.merchant, amount: impEditing.amount } } }).then(afterImp).catch(impFail);
+  }
+
+  // ---------- Merchant rules ----------
+  let rulesData = null, ruleEditing = null;
+  function openRules() {
+    $('rulesDlg').classList.add('show'); $('ruleList').innerHTML = '<div class="msg">Loading…</div>'; $('ruleTest').value = ''; $('ruleSearch').value = ''; renderRuleTest();
+    call({ query: 'action=rules' }).then(d => {
+      if (!d || !Array.isArray(d.rules)) throw new Error('Your Apps Script is out of date. Paste the latest Code.gs and deploy a New version on both deployments.');
+      rulesData = d; renderRules(); renderRuleTest();
+    }).catch(e => { $('ruleList').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; });
+  }
+  function closeRules() { $('rulesDlg').classList.remove('show'); }
+  function renderRules() {
+    if (!rulesData) return;
+    const q = $('ruleSearch').value.trim().toLowerCase();
+    const list = rulesData.rules.filter(r => !q || (r.keyword + ' ' + r.category + ' ' + r.label).toLowerCase().indexOf(q) >= 0);
+    $('ruleList').innerHTML = list.length ? list.map(r => '<div class="pay" onclick="openRuleEdit(' + r.row + ')"><div style="min-width:0"><div class="cat">' + esc(r.label || r.category) +
+      (r.active ? '' : '<span class="badge">off</span>') + (r.auto ? '' : '<span class="badge">choice only</span>') + '</div><div class="note">' + esc(r.keyword) + ' → ' + esc(r.category) + '</div></div></div>').join('')
+      : '<div class="msg">No rules' + (q ? ' match.' : ' yet.') + '</div>';
+  }
+  function renderRuleTest() {
+    const m = $('ruleTest').value.trim().toUpperCase(), out = $('ruleTestOut');
+    if (!m || !rulesData) { out.textContent = ''; return; }
+    const hits = rulesData.rules.filter(r => r.active && m.indexOf(r.keyword) >= 0).sort((a, b) => b.keyword.length - a.keyword.length || a.row - b.row);
+    const auto = hits.find(r => r.auto);
+    if (!hits.length) { out.textContent = 'No rule matches. This charge would wait for you to pick a category.'; return; }
+    const others = hits.filter(r => r !== auto);
+    out.textContent = (auto ? 'Goes to ' + auto.category + ' automatically (' + (auto.label || auto.keyword) + ').' : 'Only choice-only rules match, so it would wait for you.') +
+      (others.length ? ' Other options: ' + others.map(r => r.label || r.category).join(', ') + '.' : '');
+  }
+  function openRuleEdit(row) {
+    ruleEditing = row ? rulesData.rules.find(r => r.row === row) : null; $('reErr').textContent = '';
+    $('reTitle').textContent = ruleEditing ? 'Edit rule' : 'New rule';
+    $('reCat').innerHTML = rulesData.categories.map(n => '<option>' + esc(n) + '</option>').join('');
+    $('reKw').value = ruleEditing ? ruleEditing.keyword : ''; $('reLabel').value = ruleEditing ? ruleEditing.label : '';
+    if (ruleEditing) $('reCat').value = (rulesData.categories.find(n => n.toLowerCase() === ruleEditing.category.toLowerCase()) || ruleEditing.category);
+    $('reActive').checked = ruleEditing ? ruleEditing.active : true; $('reAuto').checked = ruleEditing ? ruleEditing.auto : true;
+    $('reDel').style.display = ruleEditing ? '' : 'none';
+    $('ruleEditDlg').classList.add('show');
+  }
+  function closeRuleEdit() { $('ruleEditDlg').classList.remove('show'); ruleEditing = null; }
+  function afterRule(d) { rulesData = d; $('reSave').disabled = false; $('reDel').disabled = false; closeRuleEdit(); renderRules(); renderRuleTest(); }
+  function ruleFail(e) { $('reSave').disabled = false; $('reDel').disabled = false; $('reErr').textContent = e.message; }
+  function saveRule() {
+    if (!$('reKw').value.trim()) { $('reErr').textContent = 'Enter a keyword.'; return; }
+    $('reSave').disabled = true; $('reDel').disabled = true;
+    const body = { action: 'ruleSave', keyword: $('reKw').value.trim(), category: $('reCat').value, label: $('reLabel').value.trim(), active: $('reActive').checked, auto: $('reAuto').checked };
+    if (ruleEditing) { body.row = ruleEditing.row; body.expected = { keyword: ruleEditing.keyword, category: ruleEditing.category }; }
+    call({ body: body }).then(afterRule).catch(ruleFail);
+  }
+  function deleteRule() {
+    if (!confirm('Delete this rule?')) return;
+    $('reSave').disabled = true; $('reDel').disabled = true;
+    call({ body: { action: 'ruleDelete', row: ruleEditing.row, expected: { keyword: ruleEditing.keyword } } }).then(afterRule).catch(ruleFail);
   }
 
   // ---------- owed to savings ----------
@@ -576,6 +757,7 @@
     } catch (e) {}
   }
 
+  $('impRemember').addEventListener('change', () => { $('impKwWrap').style.display = $('impRemember').checked ? '' : 'none'; });
   window.addEventListener('online', syncTrip);
   // no refresh button: reload the data whenever you come back to the app
   document.addEventListener('visibilitychange', () => {

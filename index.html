@@ -87,9 +87,9 @@
     <div id="list"><div class="msg">Loading…</div></div>
   </section>
 
-  <section id="add" class="tab">
+  <section id="add" class="tab" data-enter="submitExpense">
     <label for="amount">Amount spent</label>
-    <input id="amount" type="number" inputmode="decimal" step="0.01" placeholder="0.00">
+    <input id="amount" type="text" inputmode="decimal" class="num" autocomplete="off" placeholder="0.00">
     <label for="cat">Category</label>
     <select id="cat"></select>
     <label for="note">Note (optional)</label>
@@ -111,10 +111,10 @@
   <section id="trip" class="tab">
     <div class="card" id="tripHead"></div>
     <div class="seg"><button id="cur-BOB" class="active" onclick="setTripCur('BOB')">Show in Bolivianos</button><button id="cur-USD" onclick="setTripCur('USD')">Show in USD</button></div>
-    <div class="card">
+    <div class="card" data-enter="addTrip">
       <div class="name" style="margin-bottom:4px">Add trip payment</div>
       <label for="tAmount">Amount</label>
-      <input id="tAmount" type="number" inputmode="decimal" step="0.01" placeholder="0.00">
+      <input id="tAmount" type="text" inputmode="decimal" class="num" autocomplete="off" placeholder="0.00">
       <div class="seg" style="margin-top:10px"><button id="ec-BOB" class="active" onclick="setEntryCur('BOB')">Bolivianos (Bs)</button><button id="ec-USD" onclick="setEntryCur('USD')">USD</button></div>
       <label for="tDate">Date</label>
       <input id="tDate" type="date">
@@ -135,7 +135,7 @@
   <button id="nav-trip" onclick="show('trip')"><span>&#9992;</span>Trip</button>
 </nav>
 
-<div class="overlay" id="setup">
+<div class="overlay" id="setup" data-enter="saveSetup">
   <div class="dialog">
     <h2>One-time setup</h2>
     <label for="cfgUrl">Web app URL (ends in /exec)</label>
@@ -156,11 +156,11 @@
   </div>
 </div>
 
-<div class="overlay" id="editDlg">
+<div class="overlay" id="editDlg" data-enter="saveEdit">
   <div class="dialog">
     <h2>Edit payment</h2>
     <label for="eAmount">Amount</label>
-    <input id="eAmount" type="number" inputmode="decimal" step="0.01">
+    <input id="eAmount" type="text" inputmode="decimal" class="num" autocomplete="off">
     <label for="eCat">Category</label>
     <select id="eCat"></select>
     <label for="eNote">Note</label>
@@ -174,14 +174,14 @@
   </div>
 </div>
 
-<div class="overlay" id="owedDlg" style="align-items:flex-start">
+<div class="overlay" id="owedDlg" data-enter="saveOwed" style="align-items:flex-start">
   <div class="dialog">
     <h2>Owed to savings</h2>
     <div class="ytot" id="owedBal"></div>
     <div class="sub" id="owedHint"></div>
     <div class="seg" style="margin-top:14px"><button id="ow-borrow" class="active" onclick="setOwedType('borrow')">Moved from savings</button><button id="ow-repay" onclick="setOwedType('repay')">Paid savings back</button></div>
     <label for="owAmt">Amount</label>
-    <input id="owAmt" type="number" inputmode="decimal" step="0.01" placeholder="0.00">
+    <input id="owAmt" type="text" inputmode="decimal" class="num" autocomplete="off" placeholder="0.00">
     <label for="owNote">Note (optional)</label>
     <input id="owNote" type="text">
     <label for="owDate">Date</label>
@@ -204,7 +204,7 @@
   </div>
 </div>
 
-<div class="overlay" id="impDlg">
+<div class="overlay" id="impDlg" data-enter="saveImp">
   <div class="dialog">
     <h2 id="impTitle">Charge</h2>
     <div class="sub" id="impSub"></div>
@@ -221,7 +221,7 @@
   </div>
 </div>
 
-<div class="overlay" id="rulesDlg" style="align-items:flex-start">
+<div class="overlay" id="rulesDlg" data-enter="" style="align-items:flex-start">
   <div class="dialog">
     <h2>Merchant rules</h2>
     <div class="sub">When a Chase charge contains a rule's keyword, it goes to that category automatically.</div>
@@ -236,7 +236,7 @@
   </div>
 </div>
 
-<div class="overlay" id="ruleEditDlg">
+<div class="overlay" id="ruleEditDlg" data-enter="saveRule">
   <div class="dialog">
     <h2 id="reTitle">Rule</h2>
     <label for="reKw">Keyword (found anywhere in the merchant name)</label>
@@ -255,11 +255,11 @@
   </div>
 </div>
 
-<div class="overlay" id="tripEditDlg">
+<div class="overlay" id="tripEditDlg" data-enter="saveTripEdit">
   <div class="dialog">
     <h2>Edit trip payment</h2>
     <label for="teAmount">Amount</label>
-    <input id="teAmount" type="number" inputmode="decimal" step="0.01">
+    <input id="teAmount" type="text" inputmode="decimal" class="num" autocomplete="off">
     <label for="teCur">Currency</label>
     <select id="teCur"><option value="USD">USD</option><option value="BOB">Bolivianos (Bs)</option></select>
     <label for="teDate">Date</label>
@@ -273,13 +273,13 @@
   </div>
 </div>
 
-<div class="overlay" id="tripSetDlg">
+<div class="overlay" id="tripSetDlg" data-enter="saveTripSettings">
   <div class="dialog">
     <h2>Trip fund &amp; rate</h2>
     <label for="tsFund">Trip fund (USD)</label>
-    <input id="tsFund" type="number" inputmode="decimal" step="0.01">
+    <input id="tsFund" type="text" inputmode="decimal" class="num" autocomplete="off">
     <label for="tsRate">Exchange rate (Bs per 1 USD)</label>
-    <input id="tsRate" type="number" inputmode="decimal" step="0.01">
+    <input id="tsRate" type="text" inputmode="decimal" class="num" autocomplete="off">
     <div class="sub" style="margin-top:8px">A new rate applies to payments you add from now on. Existing payments keep the rate they were entered with.</div>
     <button class="btn" onclick="saveTripSettings()">Save</button>
     <button class="btn alt" onclick="document.getElementById('tripSetDlg').classList.remove('show')">Cancel</button>
@@ -288,7 +288,7 @@
 </div>
 
 <script>
-  const APP_VERSION = 12;
+  const APP_VERSION = 13;
   let backendVersion = '?', summary = null, payView = 'sum';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
@@ -365,10 +365,10 @@
     const leftTxt = left >= 0 ? money(left) + ' left' : money(-left) + ' over budget';
     return '<div class="card ' + (extra || '') + '">' +
       '<div class="row"><span class="name">' + esc(name) + '</span>' +
-      '<span class="sub">' + money(spent) + ' of ' + money(budget) + '</span></div>' +
+      '<span class="sub">' + Math.round(pct) + '%</span></div>' +
       '<div class="track"><div class="fill bg-' + lv + '" style="width:' + Math.min(pct, 100) + '%"></div></div>' +
       '<div class="row"><span class="left ' + lv + '">' + leftTxt + '</span>' +
-      '<span class="sub">' + Math.round(pct) + '%</span></div></div>';
+      '<span class="sub">' + money(spent) + ' of ' + money(budget) + '</span></div></div>';
   }
   function owedCard() {
     if (!data || typeof data.owed !== 'number') return '';
@@ -684,9 +684,9 @@
     const fundUSD = trip.fund, fundBOB = trip.fund * trip.rate;
     const fund = tripCur === 'USD' ? fundUSD : fundBOB, spent = tripCur === 'USD' ? spentUSD : spentBOB, left = fund - spent;
     const pct = fundUSD > 0 ? (spentUSD / fundUSD) * 100 : 0, lv = level(pct);
-    $('tripHead').innerHTML = '<div class="row"><span class="name">Trip fund</span><span class="sub">' + fmtC(spent, tripCur) + ' of ' + fmtC(fund, tripCur) + '</span></div>' +
+    $('tripHead').innerHTML = '<div class="row"><span class="name">Trip fund</span><span class="sub">' + Math.round(pct) + '%</span></div>' +
       '<div class="track"><div class="fill bg-' + lv + '" style="width:' + Math.min(pct, 100) + '%"></div></div>' +
-      '<div class="row"><span class="left ' + lv + '">' + (left >= 0 ? fmtC(left, tripCur) + ' left' : fmtC(-left, tripCur) + ' over') + '</span><span class="sub">' + Math.round(pct) + '%</span></div>' +
+      '<div class="row"><span class="left ' + lv + '">' + (left >= 0 ? fmtC(left, tripCur) + ' left' : fmtC(-left, tripCur) + ' over') + '</span><span class="sub">' + fmtC(spent, tripCur) + ' of ' + fmtC(fund, tripCur) + '</span></div>' +
       '<div class="row" style="margin-top:8px"><span class="sub">1 USD = ' + trip.rate + ' Bs</span><button class="linkbtn" onclick="openTripSettings()">Edit fund &amp; rate</button></div>';
     const rows = items.map((it, idx) => ({ it: it, idx: idx })).sort((a, b) => (a.it.date < b.it.date ? -1 : a.it.date > b.it.date ? 1 : a.idx - b.idx));
     if (!rows.length) { $('tripList').innerHTML = '<div class="msg">No trip payments yet.</div>'; renderSyncStatus(); return; }
@@ -764,6 +764,48 @@
   }
 
   $('impRemember').addEventListener('change', () => { $('impKwWrap').style.display = $('impRemember').checked ? '' : 'none'; });
+
+  // ---------- keyboard: number pad without comma, and Next / Done on every form ----------
+  // Amount fields use a decimal keypad. A typed comma becomes a period; anything else non-numeric is dropped.
+  function cleanNum(el) {
+    let v = el.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+    const i = v.indexOf('.');
+    if (i >= 0) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/\./g, '');
+    if (v !== el.value) el.value = v;
+  }
+  document.addEventListener('input', e => { if (e.target.classList && e.target.classList.contains('num')) cleanNum(e.target); });
+  function shown(el) {
+    for (let n = el; n && n !== document.body; n = n.parentElement) if (n.style && n.style.display === 'none') return false;
+    return !el.disabled;
+  }
+  // the typing fields of a form, in page order (dropdowns, dates and checkboxes are skipped: they open their own pickers)
+  function formFields(group) {
+    return [...group.querySelectorAll('input')].filter(el => !/^(checkbox|radio|date|hidden|button|submit)$/i.test(el.type) && shown(el));
+  }
+  function enterTarget(el) {
+    const group = el.closest('[data-enter]');
+    if (!group) return null;
+    const list = formFields(group), i = list.indexOf(el);
+    return { group: group, next: i >= 0 && i < list.length - 1 ? list[i + 1] : null };
+  }
+  // the keyboard's action key shows "Next" until the last field, then "Done"/"Go"
+  document.addEventListener('focusin', e => {
+    const el = e.target;
+    if (!el.matches || !el.matches('input')) return;
+    const t = enterTarget(el);
+    if (t) el.setAttribute('enterkeyhint', t.next ? 'next' : (t.group.dataset.enter ? 'go' : 'done'));
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || !e.target.matches || !e.target.matches('input')) return;
+    const t = enterTarget(e.target);
+    if (!t) return;
+    e.preventDefault();
+    if (t.next) { t.next.focus(); return; }
+    e.target.blur();
+    const fn = t.group.dataset.enter;
+    if (fn && typeof window[fn] === 'function') window[fn]();
+  });
+
   window.addEventListener('online', syncTrip);
   // no refresh button: reload the data whenever you come back to the app
   document.addEventListener('visibilitychange', () => {

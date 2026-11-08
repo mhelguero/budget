@@ -289,7 +289,7 @@
 </div>
 
 <script>
-  const APP_VERSION = 16;
+  const APP_VERSION = 17;
   let backendVersion = '?', summary = null, payView = 'sum';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
@@ -532,7 +532,7 @@
   }
   function renderSummary() {
     const s = summary; if (!s) return;
-    let h = sumCard('All categories', s.totals.values, s.totals.yearTotal, s.months, s.current, null, 'total');
+    let h = sumCard('This year', s.totals.values, s.totals.yearTotal, s.months, s.current, null, 'total');
     s.rows.forEach(r => { h += sumCard(r.name, r.values, r.yearTotal, s.months, s.current, r.startingTotal); });
     $('sumList').innerHTML = h;
   }

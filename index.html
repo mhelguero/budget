@@ -77,6 +77,7 @@
   .chip.active { background:var(--accent); color:#fff; border-color:var(--accent); }
   .badge { font-size:11px; font-weight:700; padding:2px 7px; border-radius:99px; background:var(--track); color:var(--muted); margin-left:6px; }
   .ytot { font-weight:700; font-size:18px; }
+  .btnrow { display:flex; gap:10px; margin-top:20px; } .btnrow .btn { flex:1; margin-top:0; }
 </style>
 </head>
 <body>
@@ -200,7 +201,7 @@
     <h2>Chase charges</h2>
     <div class="sub">New charges found in your Chase alert emails. Tap one to set or change its category.</div>
     <div id="chaseList" style="margin-top:10px"></div>
-    <button class="btn alt" onclick="closeChase()">Close</button>
+    <div class="btnrow"><button class="btn alt" onclick="closeChase()">Close</button><button class="btn" id="chaseSave" onclick="saveChase()">Save</button></div>
   </div>
 </div>
 
@@ -288,7 +289,7 @@
 </div>
 
 <script>
-  const APP_VERSION = 15;
+  const APP_VERSION = 16;
   let backendVersion = '?', summary = null, payView = 'sum';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
@@ -377,12 +378,36 @@
     return '<div class="card owed" onclick="openOwed()"><div class="row"><span class="name">Owed to savings</span>' +
       '<span class="ytot ' + (o > 0 ? 'warn' : 'ok') + '">' + money(o) + '</span></div><div class="sub" style="margin-top:4px">' + hint + ' · tap to update</div></div>';
   }
+  // AI-picked Chase charges you've confirmed (Save in the Chase charges screen). Kept on this device.
+  const REV_KEY = 'b_chaseReviewed';
+  const impKey = x => [x.row, x.merchant, x.amount, x.date].join('|');
+  function reviewedSet() { try { return new Set(JSON.parse(localStorage.getItem(REV_KEY)) || []); } catch (e) { return new Set(); } }
+  function markReviewed(list) {
+    const s = reviewedSet(); list.forEach(x => s.add(impKey(x)));
+    try { localStorage.setItem(REV_KEY, JSON.stringify([...s].slice(-500))); } catch (e) {}
+  }
+  function aiToCheck() { const r = reviewedSet(); return imports.imports.filter(x => x.status !== 'pending' && x.source === 'ai' && !r.has(impKey(x))); }
+  let importsSig = '', importsBusy = false;
   function chaseCard() {
-    if (!data || (!data.pendingCount && !data.recentImports)) return '';
-    const p = data.pendingCount || 0, ai = data.aiRecent || 0;
-    return '<div class="card owed" onclick="openChase()"><div class="row"><span class="name">Chase charges</span><span class="ytot ' + (p ? 'warn' : 'ok') + '">' +
-      (p ? p + ' need' + (p === 1 ? 's' : '') + ' a category' : data.recentImports + ' new') + '</span></div><div class="sub" style="margin-top:4px">' +
-      (p ? 'Tap to pick a category and add them to your budget' : 'Added automatically from your alert emails' + (ai ? ' · ' + ai + ' picked by AI' : '') + ' · tap to review') + '</div></div>';
+    if (!data) return '';
+    const p = data.pendingCount || 0;
+    if (p) return '<div class="card owed" onclick="openChase()"><div class="row"><span class="name">Chase charges</span><span class="ytot warn">' +
+      p + ' need' + (p === 1 ? 's' : '') + ' a category</span></div><div class="sub" style="margin-top:4px">Tap to pick a category and add them to your budget</div></div>';
+    if (!data.aiRecent) return '';
+    // fetch the charge list quietly to see which AI picks you haven't confirmed yet
+    const sig = data.aiRecent + '|' + data.recentImports;
+    if (!imports || importsSig !== sig) {
+      if (!importsBusy) {
+        importsBusy = true;
+        call({ query: 'action=imports' }).then(d => { if (d && Array.isArray(d.imports)) { imports = d; importsSig = sig; render(); } })
+          .catch(() => {}).then(() => { importsBusy = false; });
+      }
+      return '';
+    }
+    const n = aiToCheck().length;
+    if (!n) return '';
+    return '<div class="card owed" onclick="openChase()"><div class="row"><span class="name">Chase charges</span><span class="ytot warn">' +
+      n + ' AI pick' + (n === 1 ? '' : 's') + '</span></div><div class="sub" style="margin-top:4px">Tap to check the categories the AI chose, then Save</div></div>';
   }
   function render() {
     if (!data) return;
@@ -519,10 +544,12 @@
     $('chaseDlg').classList.add('show'); $('chaseList').innerHTML = '<div class="msg">Loading…</div>';
     call({ query: 'action=imports' }).then(d => {
       if (!d || !Array.isArray(d.imports)) throw new Error('Your Apps Script is out of date. Paste the latest Code.gs and deploy a New version on both deployments.');
-      imports = d; renderChase();
+      imports = d; importsSig = data ? data.aiRecent + '|' + data.recentImports : ''; renderChase();
     }).catch(e => { $('chaseList').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; });
   }
   function closeChase() { $('chaseDlg').classList.remove('show'); }
+  // Save: you've checked the AI's picks, so the Chase card goes away until new AI picks arrive
+  function saveChase() { if (imports) markReviewed(aiToCheck()); closeChase(); render(); }
   function renderChase() {
     const list = imports.imports;
     $('chaseList').innerHTML = list.length ? list.map((x, i) => '<div class="pay" onclick="openImp(' + i + ')"><div style="min-width:0"><div class="cat">' + esc(x.merchant) + '</div>' +
@@ -562,7 +589,8 @@
     $('impSave').disabled = true; $('impSkip').disabled = true;
     const body = { action: 'importSet', row: impEditing.row, category: $('impCat').value, expected: { merchant: impEditing.merchant, amount: impEditing.amount } };
     if ($('impRemember').checked && $('impKw').value.trim()) body.remember = { keyword: $('impKw').value.trim(), label: impLabel };
-    call({ body: body }).then(afterImp).catch(impFail);
+    const done = impEditing;
+    call({ body: body }).then(d => { markReviewed([done]); afterImp(d); }).catch(impFail);
   }
   function skipImp() {
     if (!confirm('Leave this charge out of your budget?')) return;

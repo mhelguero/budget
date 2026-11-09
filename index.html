@@ -157,6 +157,15 @@
   </div>
 </div>
 
+<div class="overlay" id="catDlg" style="align-items:flex-start">
+  <div class="dialog">
+    <h2 id="catTitle" style="text-transform:capitalize">Category</h2>
+    <div class="sub" id="catSub"></div>
+    <div id="catList" style="margin-top:10px"></div>
+    <button class="btn alt" onclick="closeCat()">Close</button>
+  </div>
+</div>
+
 <div class="overlay" id="editDlg" data-enter="saveEdit">
   <div class="dialog">
     <h2>Edit payment</h2>
@@ -289,7 +298,7 @@
 </div>
 
 <script>
-  const APP_VERSION = 17;
+  const APP_VERSION = 18;
   let backendVersion = '?', summary = null, payView = 'sum';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
@@ -359,12 +368,12 @@
 
   // ---------- home ----------
   function level(pct) { return pct > 100 ? 'over' : pct >= 80 ? 'warn' : 'ok'; }
-  function card(name, budget, spent, extra) {
+  function card(name, budget, spent, extra, click) {
     const left = budget - spent;
     const pct = budget > 0 ? (spent / budget) * 100 : (spent > 0 ? 101 : 0);
     const lv = level(pct);
     const leftTxt = left >= 0 ? money(left) + ' left' : money(-left) + ' over budget';
-    return '<div class="card ' + (extra || '') + '">' +
+    return '<div class="card ' + (extra || '') + '"' + (click ? ' style="cursor:pointer" onclick="' + click + '"' : '') + '>' +
       '<div class="row"><span class="name">' + esc(name) + '</span>' +
       '<span class="sub">' + Math.round(pct) + '%</span></div>' +
       '<div class="track"><div class="fill bg-' + lv + '" style="width:' + Math.min(pct, 100) + '%"></div></div>' +
@@ -413,7 +422,7 @@
     if (!data) return;
     const cats = data.categories;
     const t = data.total || { budget: cats.reduce((a, c) => a + c.budget, 0), spent: cats.reduce((a, c) => a + c.spent, 0) };
-    $('list').innerHTML = card('Total', t.budget, t.spent, 'total') + chaseCard() + owedCard() + cats.map(c => card(c.name, c.budget, c.spent)).join('');
+    $('list').innerHTML = card('Total', t.budget, t.spent, 'total') + chaseCard() + owedCard() + cats.map((c, i) => card(c.name, c.budget, c.spent, '', 'openCat(' + i + ')')).join('');
     const opts = cats.map(c => '<option>' + esc(c.name) + '</option>').join('');
     const sel = $('cat'), cur = sel.value;
     sel.innerHTML = opts; if (cur) sel.value = cur;
@@ -464,8 +473,9 @@
         throw new Error('The backend answered without a payments list (it sent: ' + Object.keys(d || {}).join(', ') +
           '; backend v' + (d && d.version || 'old') + ', app v' + APP_VERSION + '). Paste the latest Code.gs into Apps Script and deploy a New version.');
       }
-      payments = d; renderPayments();
-    }).catch(e => { $('payList').innerHTML = '<div class="msg err">Couldn\'t load: ' + esc(e.message) + where(e) + '</div>'; });
+      payments = d; renderPayments(); renderCat();
+    }).catch(e => { $('payList').innerHTML = '<div class="msg err">Couldn\'t load: ' + esc(e.message) + where(e) + '</div>';
+      if (catOpen) $('catList').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; });
   }
   function renderPayments() {
     if (!payments) return;
@@ -481,6 +491,31 @@
         (p.note ? '<div class="note">' + esc(p.note) + '</div>' : '') + '</div><div class="amt">' + money(p.amount) + '</div></div>';
     });
     $('payList').innerHTML = html;
+  }
+  // ---------- category breakdown (tap a category on Home) ----------
+  let catOpen = null;
+  function openCat(i) {
+    const c = data.categories[i]; catOpen = c.name;
+    $('catTitle').textContent = c.name; $('catSub').textContent = money(c.spent) + ' spent of ' + money(c.budget) + ' this month';
+    $('catDlg').classList.add('show');
+    if (payments) renderCat(); else { $('catList').innerHTML = '<div class="msg">Loading…</div>'; loadPayments(); }
+  }
+  function closeCat() { $('catDlg').classList.remove('show'); catOpen = null; }
+  function renderCat() {
+    if (!catOpen || !payments) return;
+    const key = catOpen.toLowerCase();
+    const c = data && data.categories.find(x => x.name.toLowerCase() === key);
+    if (c) $('catSub').textContent = money(c.spent) + ' spent of ' + money(c.budget) + ' this month';
+    const rows = payments.payments.map((p, i) => ({ p: p, i: i })).filter(r => String(r.p.category).toLowerCase() === key);
+    if (!rows.length) { $('catList').innerHTML = '<div class="msg">No payments in this category yet this month.</div>'; return; }
+    const total = rows.reduce((a, r) => a + r.p.amount, 0);
+    let h = '<div class="paytotal"><span>' + rows.length + ' payment' + (rows.length === 1 ? '' : 's') + '</span><span>' + money(total) + '</span></div>', last = null;
+    rows.forEach(r => {
+      if (r.p.effectiveDate !== last) { h += '<div class="day">' + esc(dayLabel(r.p.effectiveDate)) + '</div>'; last = r.p.effectiveDate; }
+      h += '<div class="pay" style="background:var(--bg)" onclick="openEdit(' + r.i + ')"><div style="min-width:0"><div class="cat">' + (r.p.note ? esc(r.p.note) : esc(r.p.category)) + '</div></div>' +
+        '<div class="amt">' + money(r.p.amount) + '</div></div>';
+    });
+    $('catList').innerHTML = h;
   }
   function openEdit(i) {
     const p = payments.payments[i]; editing = p;

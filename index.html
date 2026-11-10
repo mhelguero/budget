@@ -77,6 +77,10 @@
   .chip.active { background:var(--accent); color:#fff; border-color:var(--accent); }
   .badge { font-size:11px; font-weight:700; padding:2px 7px; border-radius:99px; background:var(--track); color:var(--muted); margin-left:6px; }
   .ytot { font-weight:700; font-size:18px; }
+  .budhead, .budrow { display:grid; grid-template-columns:1fr 112px 36px; gap:8px; align-items:center; }
+  .budhead { font-size:12px; color:var(--muted); margin:14px 0 4px; }
+  .budrow { margin:6px 0; } .budrow input { padding:11px; font-size:16px; }
+  .budrow .budx { border:none; background:none; color:var(--muted); font-size:22px; padding:0; }
   .btnrow { display:flex; gap:10px; margin-top:20px; } .btnrow .btn { flex:1; margin-top:0; }
 </style>
 </head>
@@ -139,6 +143,7 @@
 <div class="overlay" id="setup" data-enter="saveSetup">
   <div class="dialog">
     <h2>One-time setup</h2>
+    <div class="sub">This app saves to your own Google budget sheet. Don't have one yet? Ask the person who shared this app for the budget sheet copy link.</div>
     <label for="cfgUrl">Web app URL (ends in /exec)</label>
     <input id="cfgUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec">
     <label for="cfgKey">Passphrase</label>
@@ -154,6 +159,18 @@
     <div class="sub" id="dlgInfo"></div>
     <button class="btn alt" onclick="more()">Add another</button>
     <button class="btn" onclick="done()">I'm done</button>
+  </div>
+</div>
+
+<div class="overlay" id="budDlg" style="align-items:flex-start">
+  <div class="dialog">
+    <h2 id="budTitle">Categories &amp; budgets</h2>
+    <div class="sub" id="budSub"></div>
+    <div class="budhead"><span>Category</span><span>Per month</span><span></span></div>
+    <div id="budRows"></div>
+    <button class="linkbtn" id="budAdd" onclick="budAddRow('', '')">+ Add category</button>
+    <div class="btnrow"><button class="btn alt" id="budCancel" onclick="closeBud()">Cancel</button><button class="btn" id="budSave" onclick="saveBud()">Save</button></div>
+    <div class="err" id="budErr"></div>
   </div>
 </div>
 
@@ -298,7 +315,7 @@
 </div>
 
 <script>
-  const APP_VERSION = 20;
+  const APP_VERSION = 21;
   let backendVersion = '?', summary = null, payView = 'list';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
@@ -422,7 +439,8 @@
     if (!data) return;
     const cats = data.categories;
     const t = data.total || { budget: cats.reduce((a, c) => a + c.budget, 0), spent: cats.reduce((a, c) => a + c.spent, 0) };
-    $('list').innerHTML = card('Total', t.budget, t.spent, 'total') + chaseCard() + owedCard() + cats.map((c, i) => card(c.name, c.budget, c.spent, '', 'openCat(' + i + ')')).join('');
+    $('list').innerHTML = card('Total', t.budget, t.spent, 'total') + chaseCard() + owedCard() + cats.map((c, i) => card(c.name, c.budget, c.spent, '', 'openCat(' + i + ')')).join('') +
+      (data.maxCategories ? '<div style="text-align:center;margin:6px 0 4px"><button class="linkbtn" onclick="openBud()">Edit categories &amp; budgets &#8250;</button></div>' : '');
     const opts = cats.map(c => '<option>' + esc(c.name) + '</option>').join('');
     const sel = $('cat'), cur = sel.value;
     sel.innerHTML = opts; if (cur) sel.value = cur;
@@ -430,7 +448,7 @@
   function load() {
     if (!cfg().url) { $('setup').classList.add('show'); return; }
     $('list').innerHTML = '<div class="msg">Loading…</div>';
-    call({}).then(d => { data = d; render(); })
+    call({}).then(d => { data = d; render(); if (d.needsBudget && !budAsked) { budAsked = true; openBud(true); } })
       .catch(e => {
         $('list').innerHTML = '<div class="msg err">Couldn\'t load: ' + esc(e.message) + where(e) +
           '<div class="sub" style="margin-top:10px">The Trip tab still works offline.</div>' +
@@ -492,6 +510,54 @@
     });
     $('payList').innerHTML = html;
   }
+  // ---------- categories & budgets editor (also the first-time "Set up your budget" screen) ----------
+  let budAsked = false, budFirst = false;
+  function budAddRow(name, amt) {
+    const n = $('budRows').children.length;
+    if (n >= data.maxCategories) return;
+    const row = document.createElement('div'); row.className = 'budrow';
+    row.innerHTML = '<input class="bname" type="text" placeholder="e.g. groceries" autocomplete="off">' +
+      '<input class="bamt num" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00">' +
+      '<button class="budx" aria-label="Remove" onclick="this.parentNode.remove();budCount()">&times;</button>';
+    row.children[0].value = name; row.children[1].value = amt;
+    $('budRows').appendChild(row); budCount();
+    return row;
+  }
+  function budCount() {
+    const n = $('budRows').children.length, max = data.maxCategories;
+    $('budAdd').style.display = n < max ? '' : 'none';
+    $('budSub').textContent = (budFirst ? 'Add your spending categories and how much you plan to spend on each per month. You can change these later from Home. ' : '') +
+      n + ' of ' + max + ' categories.';
+  }
+  function openBud(first) {
+    if (!data || !data.maxCategories) return;
+    budFirst = !!first; $('budErr').textContent = ''; $('budRows').innerHTML = '';
+    $('budTitle').textContent = budFirst ? 'Set up your budget' : 'Categories & budgets';
+    $('budCancel').textContent = budFirst ? 'Later' : 'Cancel';
+    data.categories.forEach(c => budAddRow(c.name, c.budget ? String(round2(c.budget)) : ''));
+    if (!data.categories.length) budAddRow('', '');
+    budCount(); $('budDlg').classList.add('show');
+  }
+  function closeBud() { $('budDlg').classList.remove('show'); }
+  function saveBud() {
+    const cats = [...$('budRows').children].map(r => ({ name: r.children[0].value.trim(), budget: r.children[1].value.trim() }))
+      .filter(c => c.name || c.budget);
+    $('budErr').textContent = '';
+    if (!cats.length) { $('budErr').textContent = 'Add at least one category.'; return; }
+    for (const c of cats) {
+      if (!c.name) { $('budErr').textContent = 'Every category needs a name.'; return; }
+      if (c.budget !== '' && !(parseFloat(c.budget) >= 0)) { $('budErr').textContent = 'Check the amount for ' + c.name + '.'; return; }
+    }
+    $('budSave').disabled = true; $('budSave').textContent = 'Saving…';
+    call({ body: { action: 'budgetSave', categories: cats.map(c => ({ name: c.name, budget: parseFloat(c.budget) || 0 })) } })
+      .then(d => {
+        if (!d || !Array.isArray(d.categories)) throw new Error('Your Apps Script is out of date. Paste the latest Code.gs and deploy a New version.');
+        data = d; render(); summary = null; closeBud();
+      })
+      .catch(e => { $('budErr').textContent = e.message; })
+      .then(() => { $('budSave').disabled = false; $('budSave').textContent = 'Save'; });
+  }
+
   // ---------- category breakdown (tap a category on Home) ----------
   let catOpen = null;
   function openCat(i) {

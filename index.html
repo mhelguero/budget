@@ -102,7 +102,7 @@
   </section>
 
   <section id="pay" class="tab">
-    <div class="seg"><button id="seg-sum" onclick="setPayView('sum')">By category</button><button id="seg-list" class="active" onclick="setPayView('list')">This Month</button></div>
+    <div class="seg"><button id="seg-list" class="active" onclick="setPayView('list')">This Month</button><button id="seg-sum" onclick="setPayView('sum')">By category</button></div>
     <div style="text-align:right;margin:2px 4px 0"><button class="linkbtn" id="rulesBtn" onclick="openRules()">Merchant rules &#8250;</button></div>
     <div id="payBanner"></div>
     <div id="payList"><div class="msg">Loading…</div></div>
@@ -298,7 +298,7 @@
 </div>
 
 <script>
-  const APP_VERSION = 19;
+  const APP_VERSION = 20;
   let backendVersion = '?', summary = null, payView = 'list';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);

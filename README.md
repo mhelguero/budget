@@ -5,12 +5,6 @@ A phone budget app (a PWA) backed by your own Google Sheet.
 - **App:** https://mhelguero.github.io/budget/ (served by GitHub Pages from `main`; add it to the home screen on Android or iPhone)
 - **New user?** Follow [SETUP.md](SETUP.md).
 
-## Demo
-[![Budget app demo: tap to watch](docs/demo.png)](docs/demo.mp4)
-
-[Watch the 1-minute demo](docs/demo.mp4). It uses sample data and shows the one-time setup, setting categories and budgets,
-adding payments, tapping a category to see its payments, History, and editing budgets.
-
 ## How it fits together
 ```
 phone app (index.html)  ──HTTPS──▶  Google Apps Script web app (backend/Code.gs)  ──▶  your Google Sheet

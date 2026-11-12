@@ -315,7 +315,7 @@
 </div>
 
 <script>
-  const APP_VERSION = 21;
+  const APP_VERSION = 22;
   let backendVersion = '?', summary = null, payView = 'list';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
@@ -400,6 +400,7 @@
   function owedCard() {
     if (!data || typeof data.owed !== 'number') return '';
     const o = round2(data.owed);
+    if (!o) return '';   // nothing owed: no card (the link at the bottom of Home opens the same screen)
     const hint = o > 0 ? 'Move ' + money(o) + ' from checking into savings' : o < 0 ? 'You moved ' + money(-o) + ' extra into savings' : 'All caught up';
     return '<div class="card owed" onclick="openOwed()"><div class="row"><span class="name">Owed to savings</span>' +
       '<span class="ytot ' + (o > 0 ? 'warn' : 'ok') + '">' + money(o) + '</span></div><div class="sub" style="margin-top:4px">' + hint + ' · tap to update</div></div>';
@@ -440,7 +441,10 @@
     const cats = data.categories;
     const t = data.total || { budget: cats.reduce((a, c) => a + c.budget, 0), spent: cats.reduce((a, c) => a + c.spent, 0) };
     $('list').innerHTML = card('Total', t.budget, t.spent, 'total') + chaseCard() + owedCard() + cats.map((c, i) => card(c.name, c.budget, c.spent, '', 'openCat(' + i + ')')).join('') +
-      (data.maxCategories ? '<div style="text-align:center;margin:6px 0 4px"><button class="linkbtn" onclick="openBud()">Edit categories &amp; budgets &#8250;</button></div>' : '');
+      '<div style="text-align:center;margin:6px 0 4px">' +
+      (data.maxCategories ? '<div><button class="linkbtn" onclick="openBud()">Edit categories &amp; budgets &#8250;</button></div>' : '') +
+      (typeof data.owed === 'number' && !round2(data.owed) ? '<div><button class="linkbtn" onclick="openOwed()">Moved money from savings? &#8250;</button></div>' : '') +
+      '</div>';
     const opts = cats.map(c => '<option>' + esc(c.name) + '</option>').join('');
     const sel = $('cat'), cur = sel.value;
     sel.innerHTML = opts; if (cur) sel.value = cur;

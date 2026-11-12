@@ -225,7 +225,7 @@
 <div class="overlay" id="chaseDlg" style="align-items:flex-start">
   <div class="dialog">
     <h2>Chase charges</h2>
-    <div class="sub">New charges found in your Chase alert emails. Tap one to set or change its category.</div>
+    <div class="sub">Chase charges waiting for you: ones that need a category, and AI picks you haven't saved yet. Tap one to check or change it; Save confirms all the AI picks.</div>
     <div id="chaseList" style="margin-top:10px"></div>
     <div class="btnrow"><button class="btn alt" onclick="closeChase()">Close</button><button class="btn" id="chaseSave" onclick="saveChase()">Save</button></div>
   </div>
@@ -315,7 +315,7 @@
 </div>
 
 <script>
-  const APP_VERSION = 22;
+  const APP_VERSION = 23;
   let backendVersion = '?', summary = null, payView = 'list';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
@@ -655,12 +655,15 @@
   function closeChase() { $('chaseDlg').classList.remove('show'); }
   // Save: you've checked the AI's picks, so the Chase card goes away until new AI picks arrive
   function saveChase() { if (imports) markReviewed(aiToCheck()); closeChase(); render(); }
+  // only what still needs you: charges without a category, and AI picks not saved yet (saved ones and rule matches are left out)
   function renderChase() {
-    const list = imports.imports;
-    $('chaseList').innerHTML = list.length ? list.map((x, i) => '<div class="pay" onclick="openImp(' + i + ')"><div style="min-width:0"><div class="cat">' + esc(x.merchant) + '</div>' +
+    const r = reviewedSet();
+    const list = imports.imports.map((x, i) => ({ x: x, i: i }))
+      .filter(o => o.x.status === 'pending' || (o.x.source === 'ai' && !r.has(impKey(o.x))));
+    $('chaseList').innerHTML = list.length ? list.map(({ x, i }) => '<div class="pay" onclick="openImp(' + i + ')"><div style="min-width:0"><div class="cat">' + esc(x.merchant) + '</div>' +
       '<div class="note">' + esc(dayLabel(x.date)) + ' · ' + (x.status === 'pending' ? '<span class="warn">Needs a category</span>' : esc(x.category) + (x.source === 'ai' ? '<span class="badge">AI</span>' : '')) +
       '</div></div><div class="amt">' + money(x.amount) + '</div></div>').join('')
-      : '<div class="msg">No Chase charges yet.</div>';
+      : '<div class="msg">All caught up. Nothing to check.</div>';
   }
   function deriveKeyword(m) {
     return String(m).toUpperCase().replace(/#.*$/, '').replace(/\s+[\d][\d\s-]*$/, '').replace(/\s+/g, ' ').trim();

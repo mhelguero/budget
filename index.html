@@ -315,7 +315,7 @@
 </div>
 
 <script>
-  const APP_VERSION = 23;
+  const APP_VERSION = 24;
   let backendVersion = '?', summary = null, payView = 'list';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
@@ -576,7 +576,7 @@
     const key = catOpen.toLowerCase();
     const c = data && data.categories.find(x => x.name.toLowerCase() === key);
     if (c) $('catSub').textContent = money(c.spent) + ' spent of ' + money(c.budget) + ' this month';
-    const rows = payments.payments.map((p, i) => ({ p: p, i: i })).filter(r => String(r.p.category).toLowerCase() === key);
+    const rows = payments.payments.map((p, i) => ({ p: p, i: i })).filter(r => String(r.p.category).toLowerCase() === key).reverse();   // newest first
     if (!rows.length) { $('catList').innerHTML = '<div class="msg">No payments in this category yet this month.</div>'; return; }
     const total = rows.reduce((a, r) => a + r.p.amount, 0);
     let h = '<div class="paytotal"><span>' + rows.length + ' payment' + (rows.length === 1 ? '' : 's') + '</span><span>' + money(total) + '</span></div>', last = null;

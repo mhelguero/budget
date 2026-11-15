@@ -17,9 +17,9 @@ Steps 1–5 need a computer, because the Budget app menu and Apps Script don't w
    - Click **Deploy**, then **Authorize access** if asked (same Advanced → Allow steps).
 4. **Copy the URL:** copy the **Web app URL** ending in `/exec`. It's also available any time from **Budget app → Show app link** in the sheet.
 5. Send that URL to your phone, for example by email or Notes.
-6. **On the iPhone:** open **https://mhelguero.github.io/budget/** in **Safari**, paste the URL, type the passphrase, then tap **Save**.
+6. **On the phone:** open **https://mhelguero.github.io/budget/** (iPhone: in **Safari**; Android: in **Chrome**), paste the URL, type the passphrase, then tap **Save**.
 7. **Set up your budget** opens: enter your categories (up to 8) and monthly amounts, then tap **Save**.
-8. **Install:** tap **Share → Add to Home Screen → Add**.
+8. **Install:** iPhone: tap **Share → Add to Home Screen → Add**. Android: tap **⋮ → Add to Home screen** (or **Install app**).
 9. **Check:** add a test payment, look for it in the sheet's log (row 16), then delete it in History.
 
 ## Optional: Chase email import (for Chase card users), on the computer

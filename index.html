@@ -242,7 +242,8 @@
     <label class="chk"><input type="checkbox" id="impRemember"> Remember this merchant</label>
     <div id="impKwWrap" style="display:none"><label for="impKw">Match merchants containing</label><input id="impKw" type="text"></div>
     <button class="btn" id="impSave" onclick="saveImp()">Save category</button>
-    <button class="btn alt" id="impSkip" onclick="skipImp()">Don't add this charge</button>
+    <label class="chk" id="impIgnoreWrap" style="margin-top:22px"><input type="checkbox" id="impIgnore"> <span id="impIgnoreTxt">Always ignore this store</span></label>
+    <button class="btn alt" id="impSkip" onclick="skipImp()" style="margin-top:8px">Don't add this charge</button>
     <button class="btn alt" onclick="closeImp()">Cancel</button>
     <div class="err" id="impErr"></div>
   </div>
@@ -315,7 +316,7 @@
 </div>
 
 <script>
-  const APP_VERSION = 24;
+  const APP_VERSION = 25;
   let backendVersion = '?', summary = null, payView = 'list';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
@@ -678,7 +679,9 @@
     $('impAi').style.display = x.source === 'ai' ? '' : 'none';
     $('impRemember').checked = x.source === 'ai' || (x.status === 'pending' && !x.choices.length); $('impKw').value = deriveKeyword(x.merchant);
     $('impKwWrap').style.display = $('impRemember').checked ? '' : 'none';
-    $('impSkip').style.display = x.status === 'pending' ? '' : 'none';
+    $('impSkip').textContent = x.status === 'pending' ? 'Don\'t add this charge' : 'Don\'t count this charge';
+    $('impIgnore').checked = false;
+    $('impIgnoreTxt').textContent = 'Always ignore ' + deriveKeyword(x.merchant) + ' (future charges won\'t be counted)';
     $('impSave').textContent = x.status === 'pending' ? 'Add to budget' : 'Save category';
     $('impDlg').classList.add('show');
   }
@@ -701,9 +704,17 @@
     call({ body: body }).then(d => { markReviewed([done]); afterImp(d); }).catch(impFail);
   }
   function skipImp() {
-    if (!confirm('Leave this charge out of your budget?')) return;
+    const ign = $('impIgnore').checked, kw = deriveKeyword(impEditing.merchant);
+    const q = (impEditing.status === 'pending' ? 'Leave this charge out of your budget?' : 'Remove this charge from your budget?') +
+      (ign ? '\n\nFuture charges from ' + kw + ' will be ignored too. You can undo that in Merchant rules.' : '');
+    if (!confirm(q)) return;
     $('impSave').disabled = true; $('impSkip').disabled = true;
-    call({ body: { action: 'importSkip', row: impEditing.row, expected: { merchant: impEditing.merchant, amount: impEditing.amount } } }).then(afterImp).catch(impFail);
+    const body = { action: 'importSkip', row: impEditing.row, expected: { merchant: impEditing.merchant, amount: impEditing.amount } };
+    if (ign) body.ignore = { keyword: kw };
+    call({ body: body }).then(d => {
+      if (impEditing && impEditing.status !== 'pending' && !(d && d.imports)) throw new Error('Your Apps Script is out of date. Paste the latest Code.gs and deploy a New version.');
+      afterImp(d);
+    }).catch(impFail);
   }
 
   // ---------- Merchant rules ----------
@@ -721,7 +732,7 @@
     const q = $('ruleSearch').value.trim().toLowerCase();
     const list = rulesData.rules.filter(r => !q || (r.keyword + ' ' + r.category + ' ' + r.label).toLowerCase().indexOf(q) >= 0);
     $('ruleList').innerHTML = list.length ? list.map(r => '<div class="pay" onclick="openRuleEdit(' + r.row + ')"><div style="min-width:0"><div class="cat">' + esc(r.label || r.category) +
-      (r.active ? '' : '<span class="badge">off</span>') + (r.auto ? '' : '<span class="badge">choice only</span>') + '</div><div class="note">' + esc(r.keyword) + ' → ' + esc(r.category) + '</div></div></div>').join('')
+      (r.active ? '' : '<span class="badge">off</span>') + (r.auto ? '' : '<span class="badge">choice only</span>') + '</div><div class="note">' + esc(r.keyword) + ' → ' + (r.category === '(ignore)' ? 'not counted (ignored)' : esc(r.category)) + '</div></div></div>').join('')
       : '<div class="msg">No rules' + (q ? ' match.' : ' yet.') + '</div>';
   }
   function renderRuleTest() {
@@ -737,7 +748,7 @@
   function openRuleEdit(row) {
     ruleEditing = row ? rulesData.rules.find(r => r.row === row) : null; $('reErr').textContent = '';
     $('reTitle').textContent = ruleEditing ? 'Edit rule' : 'New rule';
-    $('reCat').innerHTML = rulesData.categories.map(n => '<option>' + esc(n) + '</option>').join('');
+    $('reCat').innerHTML = rulesData.categories.map(n => '<option>' + esc(n) + '</option>').join('') + '<option value="(ignore)">Don\'t count (ignore this store)</option>';
     $('reKw').value = ruleEditing ? ruleEditing.keyword : ''; $('reLabel').value = ruleEditing ? ruleEditing.label : '';
     if (ruleEditing) $('reCat').value = (rulesData.categories.find(n => n.toLowerCase() === ruleEditing.category.toLowerCase()) || ruleEditing.category);
     $('reActive').checked = ruleEditing ? ruleEditing.active : true; $('reAuto').checked = ruleEditing ? ruleEditing.auto : true;

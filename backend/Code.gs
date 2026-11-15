@@ -7,7 +7,7 @@ const SHEET_GID = 848641762;   // fallback if the budget tab was renamed
 const FIRST_CAT_ROW = 6;       // categories: Name B, Budget C, Spending D (Total row right after them)
 const LOG_FIRST_ROW = 16;      // log: Date B, Category C, Spent D, Note E
 const SPEND_LAST_ROW = 86;     // your Spending formulas only sum rows 16-86
-const API_VERSION = 13;         // shown in the app's error messages so you can tell which version is live
+const API_VERSION = 14;         // shown in the app's error messages so you can tell which version is live
 const OWED_TAB = 'Savings Owed';
 const TRIP_TAB = 'Bolivia Trip';
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -736,6 +736,9 @@ function isOff_(v) { const s = String(v).trim().toLowerCase(); return s === 'fal
 // Several rules may share a keyword (e.g. "Sam's Club Groceries" and "Sam's Club Gas"). Only an "Auto" rule is
 // applied by itself, the first one listed wins; the others show up as one-tap choices in the app.
 const RULE_HEADERS = ['Keyword', 'Category', 'Active', 'Label', 'Auto'];
+// A rule whose category is IGNORE means "never count charges from this merchant": they are logged as 'ignored' and not added.
+const IGNORE = '(ignore)';
+function isIgnore_(cat) { return String(cat || '').trim().toLowerCase() === IGNORE; }
 function readRules_() {
   const sh = ss_().getSheetByName(RULES_TAB);
   if (!sh || sh.getLastRow() < 2) return [];
@@ -754,7 +757,7 @@ function matchRule_(merchant, rules) {
 // every active rule that fits this merchant, including "choice only" ones
 function matchingRules_(merchant, rules) {
   const m = String(merchant).toUpperCase();
-  return rules.filter(r => r.active && m.indexOf(r.keyword) >= 0)
+  return rules.filter(r => r.active && !isIgnore_(r.category) && m.indexOf(r.keyword) >= 0)
     .sort((a, b) => b.keyword.length - a.keyword.length || a.row - b.row)
     .map(r => ({ label: r.label || r.category, category: r.category, keyword: r.keyword, auto: r.auto }));
 }
@@ -768,12 +771,12 @@ function getData_basic_() {
 }
 function getRules_() {
   const canon = canonCats_();
-  return { version: API_VERSION, rules: readRules_().map(r => ({ row: r.row, keyword: r.keyword, category: canonCat_(r.category, canon), active: r.active, label: r.label, auto: r.auto })),
+  return { version: API_VERSION, rules: readRules_().map(r => ({ row: r.row, keyword: r.keyword, category: isIgnore_(r.category) ? IGNORE : canonCat_(r.category, canon), active: r.active, label: r.label, auto: r.auto })),
     categories: getData_basic_(), aiEnabled: !!aiKey_() };
 }
 function saveRule_(b) {
   const keyword = String(b.keyword || '').trim().toUpperCase();
-  const cat = canonCats_()[String(b.category || '').trim().toLowerCase()];
+  const cat = isIgnore_(b.category) ? IGNORE : canonCats_()[String(b.category || '').trim().toLowerCase()];
   if (!keyword) throw new Error('Enter a keyword.');
   if (!cat) throw new Error('Pick one of your budget categories.');
   const sh = ensureTab_(RULES_TAB, RULE_HEADERS);
@@ -883,14 +886,32 @@ function importSet_(b) {
   SpreadsheetApp.flush();
   return { data: getData(), imports: getImports_() };
 }
-// Don't add a pending charge (for example you already entered it by hand)
+// Leave a charge out of the budget. Pending: it's simply not added. Already added (e.g. an AI pick): its payment is
+// removed from this month's log. With b.ignore = {keyword}, charges from that merchant are never counted again.
 function importSkip_(b) {
   const sh = ss_().getSheetByName(IMPORT_TAB);
   const row = Number(b.row);
   if (!sh || row < 2 || row > sh.getLastRow()) throw new Error('Charge not found.');
-  const v = sh.getRange(row, 1, 1, 8).getValues()[0];
-  if (String(v[6]) !== 'pending' || String(v[2]) !== String(b.expected && b.expected.merchant)) throw new Error('That charge changed. Reopen the list and try again.');
+  const v = sh.getRange(row, 1, 1, 9).getValues()[0];
+  const st = String(v[6]);
+  if ((st !== 'pending' && st !== 'added') || String(v[2]) !== String(b.expected && b.expected.merchant)) throw new Error('That charge changed. Reopen the list and try again.');
+  if (st === 'added') {
+    const merchant = String(v[2]), amount = num_(v[3]), cat = String(v[5]).trim().toLowerCase();
+    const L = readLog_(getSheet_());
+    for (let i = L.rows.length - 1; i >= 0; i--) {
+      const p = L.rows[i];
+      if (p.note === merchant && Math.abs(p.amount - amount) < 0.005 && p.category.toLowerCase() === cat) {
+        deletePayment_({ row: p.row, expected: { category: p.category, amount: p.amount } });
+        break;
+      }
+    }   // not found (already deleted by hand, or an earlier month): nothing to remove
+  }
   sh.getRange(row, 7).setValue('skipped');
+  if (b.ignore && b.ignore.keyword) {
+    const kw = String(b.ignore.keyword).trim().toUpperCase();
+    const same = readRules_().find(r => r.keyword === kw && r.auto);
+    saveRule_({ row: same ? same.row : 0, keyword: kw, category: IGNORE, label: 'Ignored', active: true, auto: true });
+  }
   SpreadsheetApp.flush();
   return { data: getData(), imports: getImports_() };
 }
@@ -921,7 +942,12 @@ function runChaseImport_(dryRun) {
     const date = p.date || fmt_(m.getDate(), tz);
     if (inTripWindow_(date)) { if (dryRun) found.push({ ts: m.getDate().getTime(), id: id, status: 'ignored (trip dates)', date: date, merchant: p.merchant, amount: p.amount }); return; }
     if (!p.amount || !p.merchant) { found.push({ ts: m.getDate().getTime(), id: id, status: 'could not read', subject: subject }); return; }
-    let cat = canon[String(matchRule_(p.merchant, rules)).toLowerCase()] || '';
+    const ruled = matchRule_(p.merchant, rules);
+    if (isIgnore_(ruled)) {   // "always ignore this store": logged so it's never re-read, never counted
+      found.push({ ts: m.getDate().getTime(), id: id, date: date, merchant: p.merchant, amount: p.amount, card: p.card, category: '', source: 'rule', status: 'ignored' });
+      return;
+    }
+    let cat = canon[String(ruled).toLowerCase()] || '';
     let source = cat ? 'rule' : '';
     if (!cat && !dryRun) { cat = aiCategory_(p.merchant, p.amount, canon); if (cat) source = 'ai'; }   // the preview never calls the AI
     found.push({ ts: m.getDate().getTime(), id: id, date: date, merchant: p.merchant, amount: p.amount, card: p.card,
@@ -929,7 +955,7 @@ function runChaseImport_(dryRun) {
   }));
   found.sort((a, b) => a.ts - b.ts);
   if (!dryRun) {
-    const real = found.filter(r => r.status === 'added' || r.status === 'pending');
+    const real = found.filter(r => r.status === 'added' || r.status === 'pending' || r.status === 'ignored');
     const items = real.filter(r => r.status === 'added').map(r => ({ category: r.category, amount: r.amount, note: r.merchant, date: r.date }));
     if (items.length) addExpenses_(items);
     if (real.length) {

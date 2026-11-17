@@ -7,7 +7,7 @@ const SHEET_GID = 848641762;   // fallback if the budget tab was renamed
 const FIRST_CAT_ROW = 6;       // categories: Name B, Budget C, Spending D (Total row right after them)
 const LOG_FIRST_ROW = 16;      // log: Date B, Category C, Spent D, Note E
 const SPEND_LAST_ROW = 86;     // your Spending formulas only sum rows 16-86
-const API_VERSION = 14;         // shown in the app's error messages so you can tell which version is live
+const API_VERSION = 15;         // shown in the app's error messages so you can tell which version is live
 const OWED_TAB = 'Savings Owed';
 const TRIP_TAB = 'Bolivia Trip';
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -701,17 +701,19 @@ function senderAddress_(from) {
   const m = /<([^<>\s]+@[^<>\s]+)>/.exec(String(from)) || /([^\s<>]+@[^\s<>]+)/.exec(String(from));
   return m ? m[1].toLowerCase() : '';
 }
-function isSpendAlert_(subject) { return /you made an? .*transaction/i.test(String(subject)); }
+// English: "You made a $6.45 transaction with H-E-B #577"   Spanish: "Hiciste una transacción de $6.45 con H-E-B #577"
+function isSpendAlert_(subject) { return /you made an? .*transaction|hiciste una transacci[oó]n/i.test(String(subject)); }
 
 // Returns { amount, merchant, card, date } ; date is yyyy-MM-dd in the spreadsheet's timezone ('' if not found)
 function parseChaseAlert_(subject, html, plain, tz) {
   const lines = htmlToLines_(html).concat(String(plain || '').split('\n').map(s => s.trim()).filter(Boolean));
   const out = { amount: null, merchant: '', card: '', date: '' };
-  let merchant = fieldAfter_(lines, 'merchant');
-  if (/^(amount|date|account)$/i.test(merchant)) merchant = '';
-  const am = /\$?\s*([\d,]+\.\d{2})/.exec(fieldAfter_(lines, 'amount'));
-  out.card = fieldAfter_(lines, 'account');
-  const sub = /you made an? \$([\d,]+(?:\.\d{2})?) transaction with (.+)$/i.exec(String(subject));
+  let merchant = fieldAfter_(lines, 'merchant') || fieldAfter_(lines, 'comercio');
+  if (/^(amount|date|account|monto|importe|fecha|cuenta)$/i.test(merchant)) merchant = '';
+  const am = /\$?\s*([\d,]+\.\d{2})/.exec(fieldAfter_(lines, 'amount') || fieldAfter_(lines, 'monto') || fieldAfter_(lines, 'importe'));
+  out.card = fieldAfter_(lines, 'account') || fieldAfter_(lines, 'cuenta');
+  const sub = /you made an? \$([\d,]+(?:\.\d{2})?) transaction with (.+)$/i.exec(String(subject)) ||
+    /hiciste una transacci[oó]n de \$([\d,]+(?:\.\d{2})?) con (.+)$/i.exec(String(subject));
   out.amount = am ? Number(am[1].replace(/,/g, '')) : (sub ? Number(sub[1].replace(/,/g, '')) : null);
   out.merchant = merchant || (sub ? sub[2].trim() : '');
   const dm = /([A-Z][a-z]{2}) (\d{1,2}), (\d{4}) at (\d{1,2}:\d{2} [AP]M) ([A-Z]{2})/.exec(fieldAfter_(lines, 'date'));

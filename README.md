@@ -29,6 +29,10 @@ Tab **"Am I over Budget??"** (found by name, or by gid 848641762):
   `=IF(B6 = "", "",(SUMIF($C$16:$C$86,"*"& B6 & "*",$D$16:$D$86)))`). There's room for 8 categories.
 - **Total row:** right after the categories (row 14), with "Total" in column B. Budget `=SUM(C6:C13)` (plus anything extra), spent `=SUM(D6:D13)`.
 - **Payment log:** row 16 down. Date **B** (blank means same day as the row above), Category **C**, Amount **D**, Note **E**. The Spending formulas only count rows 16–86.
+- **Category name validation (optional):** the original sheet had a dropdown rule on **B6:B13** that only allowed names from
+  `='Back Door'!$M$2:$M$47`. Copies set up through the app should have this rule removed (Data → Data validation → Remove rule),
+  because their own category names aren't on that list. To restore it: select B6:B13 → Data → Data validation → Add rule →
+  "Dropdown (from a range)" → `='Back Door'!$M$2:$M$47`.
 
 Other tabs are created by the script when needed: `Archive YYYY`, `Savings Owed`, `Bolivia Trip`, `Merchant Rules`, `Chase Imports`.
 

@@ -316,7 +316,7 @@
 </div>
 
 <script>
-  const APP_VERSION = 26;
+  const APP_VERSION = 27;
   let backendVersion = '?', summary = null, payView = 'list';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
@@ -665,6 +665,7 @@
       '<div class="note">' + esc(dayLabel(x.date)) + ' · ' + (x.status === 'pending' ? '<span class="warn">Needs a category</span>' : esc(x.category) + (x.source === 'ai' ? '<span class="badge">AI</span>' : '')) +
       '</div></div><div class="amt">' + money(x.amount) + '</div></div>').join('')
       : '<div class="msg">All caught up. Nothing to check.</div>';
+    return list.length;
   }
   function deriveKeyword(m) {
     return String(m).toUpperCase().replace(/#.*$/, '').replace(/\s+[\d][\d\s-]*$/, '').replace(/\s+/g, ' ').trim();
@@ -691,7 +692,9 @@
   }
   function closeImp() { $('impDlg').classList.remove('show'); impEditing = null; }
   function afterImp(d) {
-    data = d.data; render(); imports = d.imports; summary = null; payments = null; closeImp(); renderChase();
+    imports = d.imports; data = d.data; summary = null; payments = null; closeImp();
+    if (!renderChase()) closeChase();   // that was the last one: nothing left to check, so close the list too
+    render();
     $('impSave').disabled = false; $('impSkip').disabled = false;
   }
   function impFail(e) { $('impSave').disabled = false; $('impSkip').disabled = false; $('impErr').textContent = e.message; }

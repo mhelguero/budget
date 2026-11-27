@@ -301,6 +301,26 @@
   </div>
 </div>
 
+<div class="overlay" id="exDlg" data-enter="saveExchange">
+  <div class="dialog">
+    <h2 id="exTitle">Exchange money</h2>
+    <div class="sub">Each time you change dollars into bolivianos, add it here. Your Bs payments are then valued at the rate you actually got.</div>
+    <label for="exUsd">Dollars you gave (USD)</label>
+    <input id="exUsd" type="text" inputmode="decimal" class="num" autocomplete="off" placeholder="0.00" oninput="exPreview()">
+    <label for="exBob">Bolivianos you got (Bs)</label>
+    <input id="exBob" type="text" inputmode="decimal" class="num" autocomplete="off" placeholder="0.00" oninput="exPreview()">
+    <div class="sub" id="exRate" style="margin-top:6px"></div>
+    <label for="exDate">Date</label>
+    <input id="exDate" type="date">
+    <label for="exNote">Note (optional)</label>
+    <input id="exNote" type="text" placeholder="e.g. casa de cambio, airport">
+    <button class="btn" onclick="saveExchange()">Save</button>
+    <button class="btn alt" onclick="closeExchange()">Cancel</button>
+    <button class="btn danger" id="exDel" onclick="deleteExchange()">Delete exchange</button>
+    <div class="err" id="exErr"></div>
+  </div>
+</div>
+
 <div class="overlay" id="tripSetDlg" data-enter="saveTripSettings">
   <div class="dialog">
     <h2>Trip fund &amp; rate</h2>
@@ -308,7 +328,7 @@
     <input id="tsFund" type="text" inputmode="decimal" class="num" autocomplete="off">
     <label for="tsRate">Exchange rate (Bs per 1 USD)</label>
     <input id="tsRate" type="text" inputmode="decimal" class="num" autocomplete="off">
-    <div class="sub" style="margin-top:8px">A new rate applies to payments you add from now on. Existing payments keep the rate they were entered with.</div>
+    <div class="sub" style="margin-top:8px">Once you add an exchange, your average exchange rate is used instead of this one.</div>
     <button class="btn" onclick="saveTripSettings()">Save</button>
     <button class="btn alt" onclick="document.getElementById('tripSetDlg').classList.remove('show')">Cancel</button>
     <div class="err" id="tsErr"></div>
@@ -316,7 +336,7 @@
 </div>
 
 <script>
-  const APP_VERSION = 27;
+  const APP_VERSION = 28;
   let backendVersion = '?', summary = null, payView = 'list';
   let data = null, payments = null, current = 'home', editing = null;
   const $ = id => document.getElementById(id);
@@ -828,22 +848,51 @@
   }
   function setTripCur(c) { tripCur = c; ['USD','BOB'].forEach(x => $('cur-' + x).classList.toggle('active', x === c)); renderTrip(); }
   function setEntryCur(c) { entryCur = c; ['USD','BOB'].forEach(x => $('ec-' + x).classList.toggle('active', x === c)); }
+  // Exchanges (dollars changed into bolivianos) live in trip.items with currency 'EXCHANGE':
+  // amount = dollars given, bob = bolivianos received, usd = 0 (so the sheet's "Spent" total ignores them).
+  const isEx = it => it.currency === 'EXCHANGE';
+  function tripMoney() {
+    const ex = trip.items.filter(isEx), spends = trip.items.filter(i => !isEx(i));
+    const exUSD = ex.reduce((a, i) => a + i.amount, 0), exBOB = ex.reduce((a, i) => a + i.bob, 0);
+    const rate = exUSD > 0 ? exBOB / exUSD : trip.rate;   // Bs per $: what you actually got, once you've exchanged
+    return { ex, spends, exUSD, exBOB, rate };
+  }
+  // value every payment at the current rate (the average of your exchanges, or the manual rate before any)
+  function tripRecalc() {
+    const m = tripMoney();
+    m.spends.forEach(it => { it.rate = round2(m.rate * 10000) / 10000; Object.assign(it, tripCalc(it.amount, it.currency, m.rate)); });
+    return m;
+  }
   function renderTrip() {
-    const items = trip.items;
+    const m = tripRecalc(), items = m.spends;
     const spentUSD = items.reduce((a, i) => a + i.usd, 0), spentBOB = items.reduce((a, i) => a + i.bob, 0);
-    const fundUSD = trip.fund, fundBOB = trip.fund * trip.rate;
+    const fundUSD = trip.fund, fundBOB = trip.fund * m.rate;
     const fund = tripCur === 'USD' ? fundUSD : fundBOB, spent = tripCur === 'USD' ? spentUSD : spentBOB, left = fund - spent;
     const pct = fundUSD > 0 ? (spentUSD / fundUSD) * 100 : 0, lv = level(pct);
+    const bsSpent = items.filter(i => i.currency === 'BOB').reduce((a, i) => a + i.bob, 0);
+    const usdSpent = items.filter(i => i.currency === 'USD').reduce((a, i) => a + i.usd, 0);
+    const cash = m.exBOB - bsSpent, notEx = fundUSD - m.exUSD - usdSpent;
     $('tripHead').innerHTML = '<div class="row"><span class="name">Trip fund</span><span class="sub">' + Math.round(pct) + '%</span></div>' +
       '<div class="track"><div class="fill bg-' + lv + '" style="width:' + Math.min(pct, 100) + '%"></div></div>' +
       '<div class="row"><span class="left ' + lv + '">' + (left >= 0 ? fmtC(left, tripCur) + ' left' : fmtC(-left, tripCur) + ' over') + '</span><span class="sub">' + fmtC(spent, tripCur) + ' of ' + fmtC(fund, tripCur) + '</span></div>' +
-      '<div class="row" style="margin-top:8px"><span class="sub">1 USD = ' + trip.rate + ' Bs</span><button class="linkbtn" onclick="openTripSettings()">Edit fund &amp; rate</button></div>';
-    const rows = items.map((it, idx) => ({ it: it, idx: idx })).sort((a, b) => (a.it.date < b.it.date ? -1 : a.it.date > b.it.date ? 1 : a.idx - b.idx));
+      (m.ex.length ?
+        '<div class="mrow" style="margin-top:10px"><span>Exchanged so far</span><b>' + fmtC(m.exUSD, 'USD') + ' → ' + fmtC(m.exBOB, 'BOB') + '</b></div>' +
+        '<div class="mrow"><span>Bolivianos left in cash</span><b class="' + (cash < 0 ? 'over' : '') + '">' + fmtC(cash, 'BOB') + '</b></div>' +
+        '<div class="mrow"><span>Dollars not exchanged yet</span><b class="' + (notEx < 0 ? 'over' : '') + '">' + fmtC(notEx, 'USD') + '</b></div>' : '') +
+      '<div class="row" style="margin-top:8px"><span class="sub">1 USD = ' + round2(m.rate) + ' Bs' + (m.ex.length ? ' (your average)' : '') + '</span>' +
+      '<button class="linkbtn" onclick="openTripSettings()">Edit fund &amp; rate</button></div>' +
+      '<button class="btn alt" style="margin-top:10px" onclick="openExchange()">+ Exchange money</button>';
+    const rows = trip.items.map((it, idx) => ({ it: it, idx: idx })).sort((a, b) => (a.it.date < b.it.date ? -1 : a.it.date > b.it.date ? 1 : a.idx - b.idx));
     if (!rows.length) { $('tripList').innerHTML = '<div class="msg">No trip payments yet.</div>'; renderSyncStatus(); return; }
     let h = '', last = null;
     rows.slice().reverse().forEach(r => {
       const it = r.it;
       if (it.date !== last) { h += '<div class="day">' + esc(dayLabel(it.date)) + '</div>'; last = it.date; }
+      if (isEx(it)) {
+        h += '<div class="pay" style="border:1px dashed var(--line)" onclick="openExchange(\'' + esc(it.id) + '\')"><div style="min-width:0"><div class="cat">Exchanged ' + fmtC(it.amount, 'USD') + '</div>' +
+          '<div class="note">' + round2(it.rate) + ' Bs per $' + (it.note ? ' · ' + esc(it.note) : '') + '</div></div><div class="amt ok">+' + fmtC(it.bob, 'BOB') + '</div></div>';
+        return;
+      }
       const val = tripCur === 'USD' ? it.usd : it.bob;
       const entered = it.currency !== tripCur ? 'entered ' + fmtC(it.amount, it.currency) : '';
       h += '<div class="pay" onclick="openTripEdit(\'' + esc(it.id) + '\')"><div style="min-width:0"><div class="cat">' + (it.note ? esc(it.note) : 'Trip payment') + '</div>' +
@@ -851,13 +900,41 @@
     });
     $('tripList').innerHTML = h; renderSyncStatus();
   }
+  let exEditId = null;
+  function openExchange(id) {
+    const it = id ? trip.items.find(x => x.id === id) : null;
+    exEditId = it ? it.id : null;
+    $('exTitle').textContent = it ? 'Edit exchange' : 'Exchange money';
+    $('exUsd').value = it ? it.amount : ''; $('exBob').value = it ? it.bob : '';
+    $('exDate').value = it ? it.date : today(); $('exNote').value = it ? it.note : '';
+    $('exDel').style.display = it ? '' : 'none'; $('exErr').textContent = ''; exPreview();
+    $('exDlg').classList.add('show');
+  }
+  function closeExchange() { $('exDlg').classList.remove('show'); exEditId = null; }
+  function exPreview() {
+    const u = parseFloat($('exUsd').value), b = parseFloat($('exBob').value);
+    $('exRate').textContent = u > 0 && b > 0 ? 'That\'s ' + round2(b / u) + ' Bs per dollar.' : '';
+  }
+  function saveExchange() {
+    const u = parseFloat($('exUsd').value), b = parseFloat($('exBob').value);
+    if (!(u > 0) || !(b > 0)) { $('exErr').textContent = 'Enter the dollars you gave and the bolivianos you got.'; return; }
+    const rec = { date: $('exDate').value || today(), amount: round2(u), currency: 'EXCHANGE', rate: round2(b / u * 10000) / 10000, usd: 0, bob: round2(b), note: $('exNote').value.trim() };
+    const it = exEditId && trip.items.find(x => x.id === exEditId);
+    if (it) Object.assign(it, rec); else trip.items.push(Object.assign({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6) }, rec));
+    trip.dirty = true; tripRecalc(); saveTrip(); closeExchange(); renderTrip(); syncTrip();
+  }
+  function deleteExchange() {
+    if (!confirm('Delete this exchange?')) return;
+    trip.items = trip.items.filter(x => x.id !== exEditId);
+    trip.dirty = true; tripRecalc(); saveTrip(); closeExchange(); renderTrip(); syncTrip();
+  }
   function addTrip() {
     const amt = parseFloat($('tAmount').value);
     $('tErr').textContent = '';
     if (!(amt > 0)) { $('tErr').textContent = 'Enter an amount.'; return; }
-    const calc = tripCalc(amt, entryCur, trip.rate);
+    const r = tripMoney().rate, calc = tripCalc(amt, entryCur, r);
     trip.items.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: $('tDate').value || today(), amount: amt, currency: entryCur,
-      rate: trip.rate, usd: calc.usd, bob: calc.bob, note: $('tNote').value.trim() });
+      rate: r, usd: calc.usd, bob: calc.bob, note: $('tNote').value.trim() });
     trip.dirty = true; saveTrip();
     $('tAmount').value = ''; $('tNote').value = '';
     renderTrip(); syncTrip();
@@ -873,7 +950,7 @@
     const amt = parseFloat($('teAmount').value);
     if (!(amt > 0)) { $('teErr').textContent = 'Enter an amount.'; return; }
     it.amount = amt; it.currency = $('teCur').value; it.date = $('teDate').value || it.date; it.note = $('teNote').value.trim();
-    Object.assign(it, tripCalc(amt, it.currency, it.rate));
+    Object.assign(it, tripCalc(amt, it.currency, tripMoney().rate));
     trip.dirty = true; saveTrip(); closeTripEdit(); renderTrip(); syncTrip();
   }
   function deleteTripItem() {
@@ -885,7 +962,7 @@
   function saveTripSettings() {
     const f = parseFloat($('tsFund').value), r = parseFloat($('tsRate').value);
     if (!(f > 0) || !(r > 0)) { $('tsErr').textContent = 'Enter a fund and a rate above zero.'; return; }
-    trip.fund = f; trip.rate = r; trip.dirty = true; saveTrip();
+    trip.fund = f; trip.rate = r; trip.dirty = true; tripRecalc(); saveTrip();
     $('tripSetDlg').classList.remove('show'); renderTrip(); syncTrip();
   }
   function renderSyncStatus() {
@@ -919,7 +996,7 @@
   (function () {
     const CLOSE = { dlg: () => { $('dlg').classList.remove('show'); resetAdd(); }, budDlg: closeBud, catDlg: closeCat, editDlg: closeEdit,
       owedDlg: closeOwed, chaseDlg: closeChase, impDlg: closeImp, rulesDlg: closeRules, ruleEditDlg: closeRuleEdit,
-      tripEditDlg: closeTripEdit, tripSetDlg: () => $('tripSetDlg').classList.remove('show') };
+      tripEditDlg: closeTripEdit, exDlg: closeExchange, tripSetDlg: () => $('tripSetDlg').classList.remove('show') };
     const open = () => [...document.querySelectorAll('.overlay.show')].filter(o => o.id !== 'setup');
     let depth = 0, skip = 0;
     new MutationObserver(() => {
